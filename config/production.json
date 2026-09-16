@@ -1,0 +1,22 @@
+{
+  "allowlisted_repositories": [
+    "thiago-ss/jev-review"
+  ],
+  "bot_login": "jev-review-thiago-ss[bot]",
+  "fallback_reviewers": [
+    "thiago-ss"
+  ],
+  "mode": "shadow",
+  "policy_version": "v1",
+  "trusted_checks": {
+    "test (3.12)": [
+      15368
+    ],
+    "test (3.9)": [
+      15368
+    ]
+  },
+  "trusted_reviewers": [
+    "thiago-ss"
+  ]
+}
