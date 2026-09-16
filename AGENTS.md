@@ -21,3 +21,4 @@ This is a single-context repository; see `docs/agents/domain.md` and `CONTEXT.md
 - Suggestions may be emitted as structured output. Jev never edits files, pushes commits, or merges; approval/reviewer-request mutations exist only behind explicit `--execute`, target config, and every policy/calibration gate.
 - The target repository and deployment identity are intentionally unset until deployment configuration is supplied. Synthetic fixtures are the current integration surface.
 - Record assumptions and caveats in the wiki and decision log; do not invent completed experiments or API observations.
+- Change the prompt/schema/policy implementation version when its behavior changes. Previous calibration must not authorize different behavior under an unchanged identity. Preserve raw evidence and record the source revision used by validation.

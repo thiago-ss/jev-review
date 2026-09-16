@@ -103,6 +103,9 @@ class PullRequest:
     title: str = ""
     body: str = ""
     truncated: bool = False
+    author: str = ""
+    base_branch: str = ""
+    observed_head_sha: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.repository, str) or not self.repository.strip() or "/" not in self.repository:
@@ -118,6 +121,12 @@ class PullRequest:
             raise ValidationError("truncated pull request")
         if not isinstance(self.title, str) or not isinstance(self.body, str):
             raise ValidationError("title/body must be strings")
+        if not isinstance(self.author, str) or not isinstance(self.base_branch, str):
+            raise ValidationError("author/base branch must be strings")
+        if not self.observed_head_sha:
+            object.__setattr__(self, "observed_head_sha", self.head_sha)
+        if not isinstance(self.observed_head_sha, str) or len(self.observed_head_sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in self.observed_head_sha):
+            raise ValidationError("invalid observed_head_sha")
         for values, label in ((self.required_checks, "required checks"), (self.passed_checks, "passed checks")):
             if not isinstance(values, tuple):
                 raise ValidationError(label + " malformed")
@@ -158,6 +167,9 @@ class Review:
         _probability(self.risk_confidence, "risk confidence")
         if any(not isinstance(c, Concern) for c in self.concerns):
             raise ValidationError("malformed concerns")
+        names = [item.name for item in self.required_checklist_items]
+        if len(names) != len(set(names)):
+            raise ValidationError("duplicate checklist item")
         if any(not isinstance(s, str) or not s.strip() for s in self.suggestions):
             raise ValidationError("malformed suggestions")
         if not isinstance(self.native_confidences, Mapping):
@@ -205,7 +217,7 @@ def parse_pr(payload: Union[Mapping[str, Any], PullRequest]) -> PullRequest:
         return PullRequest(
             repository=payload["repository"], number=payload["number"], base_sha=payload["base_sha"], head_sha=payload["head_sha"],
             files=files, required_checks=tuple(payload.get("required_checks", ())), passed_checks=tuple(payload.get("passed_checks", ())),
-            title=payload.get("title", ""), body=payload.get("body", ""), truncated=payload.get("truncated", False),
+            title=payload.get("title", ""), body=payload.get("body", ""), truncated=payload.get("truncated", False), author=payload.get("author", ""), base_branch=payload.get("base_branch", ""), observed_head_sha=payload.get("observed_head_sha", payload.get("observed_sha", "")),
         )
     except KeyError as exc:
         raise ValidationError("missing pull request field: " + str(exc)) from exc

@@ -1,9 +1,11 @@
 """Fail-closed GitHub REST adapter for review snapshots and gated writes."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import base64
+import hashlib
 import json
+import math
 import os
 import threading
 import time
@@ -42,6 +44,23 @@ class GitHubSnapshot:
 
 
 @dataclass(frozen=True)
+class ApprovalContext:
+    """Typed evidence required to authorize an approval write."""
+
+    review: Any
+    policy: Any
+    calibration: Any
+
+    def __post_init__(self) -> None:
+        from .calibration import CalibrationReport
+        from .models import Review
+        from .policy import PolicyConfig
+
+        if not isinstance(self.review, Review) or not isinstance(self.policy, PolicyConfig) or not isinstance(self.calibration, CalibrationReport):
+            raise GitHubError("approval context must contain review, policy, and calibration evidence")
+
+
+@dataclass(frozen=True)
 class ReviewPlan:
     repository: str
     number: int
@@ -56,6 +75,8 @@ class ReviewPlan:
     trusted_check_app_ids: Mapping[str, Tuple[int, ...]] = field(default_factory=dict)
     freshness_seconds: Optional[float] = None
     trusted_reviewers: Tuple[str, ...] = ()
+    allowlisted_repositories: Tuple[str, ...] = ()
+    approval_context: Optional[ApprovalContext] = None
 
 
 @dataclass(frozen=True)
@@ -136,8 +157,11 @@ class GitHubClient:
         return tuple(payload)
 
     def snapshot(self, repository: str, number: int, required_checks: Optional[Mapping[str, Iterable[int]]] = None, freshness_seconds: Optional[float] = 86_400.0) -> GitHubSnapshot:
+        if freshness_seconds is None:
+            freshness_seconds = 86_400.0
+        _freshness(freshness_seconds)
         pull = self.get_pull_request(repository, number)
-        if pull.get("state") != "open" or pull.get("draft") is True or pull.get("merged_at") is not None:
+        if pull.get("state") != "open" or not isinstance(pull.get("draft"), bool) or pull.get("draft") is True or "merged_at" not in pull or pull.get("merged_at") is not None:
             raise GitHubError("pull request is not reviewable")
         base = pull.get("base")
         head = pull.get("head")
@@ -162,9 +186,14 @@ class GitHubClient:
         passed = self._passed_checks(repository, head["sha"], policy, freshness_seconds)
         latest = self.get_pull_request(repository, number)
         latest_base, latest_head = latest.get("base"), latest.get("head")
-        if not isinstance(latest_base, Mapping) or not isinstance(latest_head, Mapping) or latest_base.get("sha") != base["sha"] or latest_head.get("sha") != head["sha"] or latest.get("state") != "open" or latest.get("draft") is True or latest.get("merged_at") is not None:
+        if not isinstance(latest_base, Mapping) or not isinstance(latest_head, Mapping) or latest_base.get("sha") != base["sha"] or latest_head.get("sha") != head["sha"] or latest.get("state") != "open" or not isinstance(latest.get("draft"), bool) or latest.get("draft") is True or "merged_at" not in latest or latest.get("merged_at") is not None:
             raise GitHubError("pull request changed while reading files/checks")
-        pr = PullRequest(repository, number, base["sha"], head["sha"], tuple(files), tuple(policy), passed, str(pull.get("title", "")), str(pull.get("body", "")))
+        user = pull.get("user")
+        author = user.get("login", "") if isinstance(user, Mapping) else ""
+        base_branch = base.get("ref", "")
+        if not isinstance(author, str) or not isinstance(base_branch, str):
+            raise GitHubError("pull request author/base branch metadata malformed")
+        pr = PullRequest(repository, number, base["sha"], head["sha"], tuple(files), tuple(policy), passed, str(pull.get("title", "")), str(pull.get("body", "")), False, author, base_branch, head["sha"])
         return GitHubSnapshot(pr, "open", bool(pull.get("draft", False)), False, tuple(policy), policy, freshness_seconds)
 
     def _all_files(self, repository: str, number: int) -> Tuple[Mapping[str, Any], ...]:
@@ -211,7 +240,7 @@ class GitHubClient:
             passed.append(name)
         return tuple(passed)
 
-    def build_plan(self, snapshot: GitHubSnapshot, decision: Any, reviewers: Sequence[str] = (), team_reviewers: Sequence[str] = (), trusted_reviewers: Iterable[str] = (), policy_version: str = "v1", summary: str = "") -> ReviewPlan:
+    def build_plan(self, snapshot: GitHubSnapshot, decision: Any, reviewers: Sequence[str] = (), team_reviewers: Sequence[str] = (), trusted_reviewers: Iterable[str] = (), policy_version: str = "v1", summary: str = "", *, allowlisted_repositories: Iterable[str] = (), approval_context: Optional[ApprovalContext] = None) -> ReviewPlan:
         trusted = frozenset(trusted_reviewers)
         all_reviewers = tuple(reviewers) + tuple(team_reviewers)
         if any(not isinstance(value, str) or not value.strip() or any(ch.isspace() for ch in value) for value in all_reviewers):
@@ -221,11 +250,23 @@ class GitHubClient:
         action = getattr(decision, "action", decision)
         action_value = getattr(action, "value", action)
         event = "APPROVE" if action_value == "auto_approve" else "COMMENT" if action_value == "escalate" else "NONE"
-        if event == "APPROVE" and not snapshot.required_checks:
-            raise GitHubError("approval requires trusted required checks")
+        allowlisted = tuple(allowlisted_repositories)
+        if any(not isinstance(repo, str) or not repo.strip() for repo in allowlisted):
+            raise GitHubError("allowlisted repositories malformed")
+        if event == "APPROVE":
+            from .policy import PolicyDecision
+
+            if not isinstance(decision, PolicyDecision) or not decision.auto_approved:
+                raise GitHubError("approval requires typed policy decision")
+            if approval_context is None or snapshot.pull_request.repository not in allowlisted:
+                raise GitHubError("approval requires typed policy context and allowlisted repository")
+            if snapshot.pull_request.repository not in approval_context.policy.allowlisted_repositories:
+                raise GitHubError("approval policy does not allow repository")
+            if not snapshot.required_checks:
+                raise GitHubError("approval requires trusted required checks")
         marker = "jev-review:" + policy_version + ":" + snapshot.pull_request.repository + ":" + str(snapshot.pull_request.number) + ":" + snapshot.pull_request.head_sha + ":" + event
         body = marker + "\n\n" + (summary.strip() or "Structured Jev review; see policy decision and trusted checks.")
-        return ReviewPlan(snapshot.pull_request.repository, snapshot.pull_request.number, snapshot.pull_request.base_sha, snapshot.pull_request.head_sha, event, body, marker, tuple(reviewers), tuple(team_reviewers), snapshot.required_checks, snapshot.trusted_check_app_ids, snapshot.freshness_seconds, tuple(trusted))
+        return ReviewPlan(snapshot.pull_request.repository, snapshot.pull_request.number, snapshot.pull_request.base_sha, snapshot.pull_request.head_sha, event, body, marker, tuple(reviewers), tuple(team_reviewers), snapshot.required_checks, snapshot.trusted_check_app_ids, snapshot.freshness_seconds, tuple(trusted), allowlisted, approval_context)
 
     def execute(self, plan: ReviewPlan, dry_run: bool = True) -> ExecutionResult:
         if plan.event == "NONE":
@@ -244,11 +285,35 @@ class GitHubClient:
                 raise GitHubError("base/head SHA changed before write")
             if plan.event == "APPROVE" and (not fresh.required_checks or tuple(fresh.pull_request.passed_checks) != tuple(fresh.required_checks)):
                 raise GitHubError("required checks are not fresh/passing")
+            if plan.event == "APPROVE":
+                context = plan.approval_context
+                if context is None:
+                    raise GitHubError("approval context missing")
+                if tuple(plan.required_checks) != tuple(fresh.required_checks):
+                    raise GitHubError("approval plan required checks changed")
+                configured_checks = tuple(context.policy.required_checks_by_repo.get(plan.repository, context.policy.trusted_required_checks.get(plan.repository, ())))
+                if configured_checks != tuple(fresh.required_checks):
+                    raise GitHubError("approval context required checks changed")
+                if context.policy.trusted_context_id:
+                    expected_context = _trusted_context_id(plan.trusted_check_app_ids, fresh.freshness_seconds)
+                    if context.policy.trusted_context_id != expected_context:
+                        raise GitHubError("approval trusted-check context changed")
+                from .policy import evaluate
+
+                passed = dict(context.policy.passed_checks_by_repo)
+                passed[plan.repository] = frozenset(fresh.pull_request.passed_checks)
+                trusted_passed = dict(context.policy.trusted_passed_checks)
+                trusted_passed[plan.repository] = frozenset(fresh.pull_request.passed_checks)
+                fresh_policy = replace(context.policy, passed_checks_by_repo=passed, trusted_passed_checks=trusted_passed)
+                fresh_decision = evaluate(fresh.pull_request, context.review, fresh_policy, context.calibration)
+                if not fresh_decision.auto_approved:
+                    raise GitHubError("approval policy no longer passes")
             bot = self.bot_login or self._current_user()
             reviews = self._reviews(plan.repository, plan.number)
             marker_present = any(isinstance(item, Mapping) and isinstance(item.get("body"), str) and plan.marker in item["body"] and isinstance(item.get("user"), Mapping) and item["user"].get("login") == bot for item in reviews)
             requested_users, requested_teams = self._requested_reviewers(plan.repository, plan.number) if plan.reviewers or plan.team_reviewers else (set(), set())
-            missing_users = tuple(value for value in plan.reviewers if value not in requested_users)
+            completed_users = _completed_reviewers(reviews, plan.head_sha)
+            missing_users = tuple(value for value in plan.reviewers if value not in requested_users and value not in completed_users)
             missing_teams = tuple(value for value in plan.team_reviewers if value not in requested_teams)
             if marker_present and not (missing_users or missing_teams):
                 return ExecutionResult(dry_run, True, ("marker already present",))
@@ -257,6 +322,8 @@ class GitHubClient:
                 operations.append("request trusted reviewers")
             if dry_run:
                 return ExecutionResult(True, False, tuple(operations))
+            if plan.repository not in plan.allowlisted_repositories:
+                raise GitHubError("repository is not allowlisted for external write")
             if not marker_present:
                 self._request("POST", "/repos/" + _repo(plan.repository) + "/pulls/" + str(plan.number) + "/reviews", {"body": plan.body, "event": plan.event, "commit_id": plan.head_sha})
             if missing_users or missing_teams:
@@ -350,6 +417,36 @@ def _retry_delay(headers: Mapping[str, str], attempt: int) -> float:
             except ValueError:
                 pass
     return min(5.0, 0.5 * 2 ** attempt)
+
+
+def _freshness(value: Optional[float]) -> None:
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise GitHubError("freshness_seconds must be finite and positive")
+    if not math.isfinite(float(value)) or float(value) <= 0:
+        raise GitHubError("freshness_seconds must be finite and positive")
+
+
+def _trusted_context_id(checks: Mapping[str, Iterable[int]], freshness: Optional[float]) -> str:
+    """Match CLI's stable identity for configured check names/app IDs/freshness."""
+    normalized = {}
+    try:
+        for name, app_ids in checks.items():
+            normalized[name] = sorted(int(value) for value in app_ids)
+        payload = {"checks": normalized, "freshness_seconds": freshness}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise GitHubError("trusted check context malformed") from exc
+
+
+def _completed_reviewers(reviews: Iterable[Mapping[str, Any]], head_sha: str) -> frozenset[str]:
+    """Return users whose completed review at this head satisfies a request."""
+    result = set()
+    for review in reviews:
+        user = review.get("user") if isinstance(review, Mapping) else None
+        login = user.get("login") if isinstance(user, Mapping) else None
+        if isinstance(login, str) and review.get("commit_id") == head_sha and review.get("state") in ("APPROVED", "CHANGES_REQUESTED"):
+            result.add(login)
+    return frozenset(result)
 
 
 def _stale(run: Mapping[str, Any], freshness_seconds: Optional[float]) -> bool:

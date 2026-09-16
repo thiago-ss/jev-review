@@ -15,6 +15,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+PROVIDER_SOURCE_HASH = hashlib.sha256((ROOT / "jev_review/provider.py").read_bytes()).hexdigest()
 
 from jev_review.models import parse_pr
 from jev_review.policy import evaluate
@@ -46,6 +47,8 @@ def main() -> None:
             print(case["id"], "approve=" + str(review.approve), "risk=" + review.risk.value, "policy=" + decision.action.value, flush=True)
         except Exception as exc:
             row["error_type"] = type(exc).__name__
+            row["error"] = str(exc)
+            row["http_status"] = getattr(exc, "status", None)
             print(case["id"], type(exc).__name__, flush=True)
         row["elapsed_seconds"] = round(time.monotonic() - started, 3)
         results.append(row)
@@ -54,7 +57,8 @@ def main() -> None:
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "synthetic": True, "production_calibration": False,
         "prompt_version": PROMPT_VERSION, "schema_version": SCHEMA_VERSION,
-        "provider_source_sha256": hashlib.sha256((ROOT / "jev_review/provider.py").read_bytes()).hexdigest(),
+        "provider_source_sha256": PROVIDER_SOURCE_HASH,
+        "provider_source_changed_during_run": PROVIDER_SOURCE_HASH != hashlib.sha256((ROOT / "jev_review/provider.py").read_bytes()).hexdigest(),
         "cases_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "summary": {"attempted": len(results), "completed": len(completed),
                     "approval_label_matches": sum(row["approval_label_match"] for row in completed),
@@ -67,7 +71,7 @@ def main() -> None:
     }
     Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report["summary"]))
-    if len(completed) != len(results):
+    if len(completed) != len(results) or report["provider_source_changed_during_run"]:
         raise SystemExit(1)
 
 

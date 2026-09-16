@@ -1,0 +1,49 @@
+{
+  "observed_at": "2026-09-16T14:01:06.665961+00:00",
+  "synthetic": true,
+  "case": "delete-without-scope",
+  "status": 200,
+  "response": {
+    "model": "jev-1.13.0",
+    "answers": {
+      "approval": {
+        "type": "choice",
+        "choice": "hold",
+        "confidence": 0.7,
+        "probabilities": {
+          "review": 0.18,
+          "hold": 0.8,
+          "approve": 0.02
+        }
+      },
+      "risk": {
+        "type": "choice",
+        "choice": "critical",
+        "confidence": 0.95,
+        "probabilities": {
+          "medium": 0.0,
+          "critical": 0.96,
+          "low": 0.01,
+          "high": 0.03
+        }
+      },
+      "correctness": {
+        "type": "noul",
+        "noul": 0.09
+      },
+      "security": {
+        "type": "noul",
+        "noul": 0.06
+      },
+      "tests": {
+        "type": "noul",
+        "noul": 0.06
+      }
+    },
+    "usage": {
+      "input_tokens": 934,
+      "output_tokens": 131
+    }
+  },
+  "outcome": "valid"
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "probability": 0.99,
+    "label": true,
+    "decision": "approve",
+    "model_id": "jev-1.13.0",
+    "prompt_version": "review-v1",
+    "schema_version": "1",
+    "repository": "acme/widget",
+    "heldout": true,
+    "synthetic": true,
+    "selected": true,
+    "sample_id": "synthetic-approve-1",
+    "policy_id": "example-policy",
+    "observed_at": "2026-09-16T12:00:00+00:00"
+  }
+]

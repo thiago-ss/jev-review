@@ -2,7 +2,7 @@
 
 A small autonomous PR review bot built around TypeSafe's Jev. It consumes structured PR metadata and patches, asks finite typed questions, then applies deterministic approval gates. Uncertain or risky reviews route to trusted owners with a structured explanation. Suggestions are advisory; the bot never edits or merges code.
 
-**Status:** local implementation and validation in progress. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
+**Status:** local implementation validated; deployment disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
 
 ## Run locally
 
@@ -18,7 +18,10 @@ python3 -m venv .venv
 
 ```sh
 .venv/bin/python -m jev_review review --input examples/review.json
+.venv/bin/python -m jev_review calibrate --input examples/calibration.json --config examples/calibration-config.json
 ```
+
+The calibration example is intentionally synthetic and reports `ready: false`; production readiness requires the held-out evidence described below.
 
 Dry-run is the default. `review --execute` only simulates active policy evaluation locally; it never calls GitHub. Only the `github` and `poll` commands can write externally, and only with explicit `--execute`.
 
@@ -37,14 +40,17 @@ Use trusted configuration from the bot's default branch. Do not load credentials
 
 Jev returns probability distributions and a vendor confidence statistic. These are preserved separately. Model certainty alone never authorizes approval. Production evidence must match the concrete response model, prompt/schema and frozen policy; synthetic, stale, duplicated or mismatched evidence fails closed.
 
-The [evaluation protocol](docs/evidence/labeling-protocol.md) defines safe autonomous coverage and the false-approval bound. Two [live synthetic API calls](docs/evidence/live-wire-smoke.json) confirmed authentication and response shape; they do not establish accuracy.
+The [evaluation protocol](docs/evidence/labeling-protocol.md) defines safe autonomous coverage and the false-approval bound. The final [ten-case real API run](docs/evidence/live-final-integration-evaluation.json) matched all synthetic approval labels; it does not establish production accuracy or calibration.
 
 ## Project map
 
 - [Product spec and acceptance criteria](.scratch/jev-autonomous-review/spec.md)
+- [Success criteria and definition of done](docs/acceptance.md)
 - [Wayfinder decision map](.scratch/jev-autonomous-review/map.md)
 - [LLM wiki](docs/wiki/index.md), including immutable source snapshots and linked decisions
 - [Jev API research](docs/research/jev-api.md)
+- [Final validation evidence](docs/evidence/validation.md)
 - [Validation contract](docs/evidence/validation-plan.md)
+- [Live synthetic evaluation](docs/evidence/live-evaluation.md), including original failure and final ten-case run
 
 Matt Pocock's selected engineering skills are installed under `.agents/skills/`, with upstream provenance and license. Implementers use Luna high; recorded evidence distinguishes local tests, real API observations and missing production evidence.

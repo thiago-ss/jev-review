@@ -6,7 +6,7 @@ Pull-request review work repeats across repositories, while model confidence and
 
 ## Solution
 
-Jev accepts structured pull-request metadata and diff evidence, asks finite independent Jev questions, produces a typed review packet, and evaluates it through a deterministic fail-closed policy. It emits `AUTO_APPROVE`, `ESCALATE`, or `SHADOW`, each with risk, checklist, confidence, evidence provenance, and policy gates. It routes non-approvals to trusted owners with a structured breakdown. Dry-run is default. Optional suggestions are output-only. Approval and reviewer-request mutations are available only behind explicit `--execute`, configured target/auth, and every policy/calibration gate; Jev never edits, pushes, merges, or assigns work.
+Jev accepts structured pull-request metadata and diff evidence, asks finite independent Jev questions, produces a typed review packet, and evaluates it through a deterministic fail-closed policy. It emits `AUTO_APPROVE`, `ESCALATE`, or `SHADOW`, each with risk, checklist, confidence, evidence provenance, and policy gates. It routes non-approvals to trusted owners with a structured breakdown. Dry-run is default. Optional suggestions are output-only. Approval, escalation comments, and reviewer-request mutations are available only behind explicit `--execute`, configured target/auth, and write-safety gates; `AUTO_APPROVE` additionally requires every policy/calibration gate. Jev never edits, pushes, merges, or assigns work.
 
 ## North star and success criteria
 
@@ -57,7 +57,7 @@ Safe autonomous coverage with a bounded false-approval rate, calibrated confiden
 - Minimum GitHub permissions are required. Approval/reviewer-request capability stays disabled unless `--execute` and explicit deployment configuration are present.
 - Store calibration artifacts with dataset/version scope, policy/model/provider versions, labels, thresholds, sample counts, error/coverage metrics, and invalidation conditions.
 - Test external behavior at the policy-evaluator seam, then adapter contract and synthetic integration seam. Avoid tests coupled to model prompts or internal helper layout.
-- No code edits, pushes, merges, or owner assignment side effects. Approval/reviewer-request API writes are allowed only in explicit execution mode after all gates pass.
+- No code edits, pushes, merges, or owner assignment side effects. Approval, escalation-comment, and reviewer-request API writes are allowed only in explicit execution mode after write-safety checks; approval also requires every policy/calibration gate.
 
 ### Review packet contract
 
@@ -78,7 +78,7 @@ Required fields: policy action; evaluated change identity; gate results with pas
 ## Out of Scope
 
 - Live target repository onboarding and production credentials in this documentation session.
-- Autonomous source edits, code generation, commits, pushes, merges, labels, comments, or owner assignment. Approval/reviewer-request mutation remains execution-gated.
+- Autonomous source edits, code generation, commits, pushes, merges, labels, or owner assignment. Approval, escalation-comment, and reviewer-request mutations remain execution-gated.
 - Any claim that confidence is calibrated before held-out empirical evaluation.
 - A universal statistical guarantee across repositories or risk strata.
 - Full RAG/vector database infrastructure; the initial wiki is Markdown and index driven.

@@ -1,7 +1,7 @@
 """Empirical calibration evidence. No report qualifies without explicit provenance."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import math
 from typing import Any, Iterable, Mapping, Optional, Tuple, Union
@@ -31,18 +31,21 @@ class CalibrationRecord:
     selected: Optional[bool] = None
     sample_id: str = ""
     policy_id: str = ""
+    stratum: Optional[str] = None
 
     def __post_init__(self) -> None:
         if isinstance(self.probability, bool) or not isinstance(self.probability, (int, float)) or not math.isfinite(float(self.probability)) or not 0 <= float(self.probability) <= 1:
             raise ValidationError("calibration probability must be finite [0,1]")
         if not isinstance(self.label, bool) or not isinstance(self.decision, str) or (self.decision not in DECISIONS and not self.decision.startswith("checklist:")):
             raise ValidationError("malformed calibration record")
-        for value in (self.model_id, self.prompt_version, self.schema_version, self.repository, self.sample_id, self.policy_id):
-            if not isinstance(value, str):
+        for identity_value in (self.model_id, self.prompt_version, self.schema_version, self.repository, self.sample_id, self.policy_id):
+            if not isinstance(identity_value, str):
                 raise ValidationError("calibration identity must be string")
-        for value, label in ((self.heldout, "heldout"), (self.synthetic, "synthetic"), (self.selected, "selected")):
-            if value is not None and not isinstance(value, bool):
-                raise ValidationError("malformed " + label + " provenance")
+        if self.stratum is not None and (not isinstance(self.stratum, str) or not self.stratum):
+            raise ValidationError("stratum must be nonempty string")
+        for provenance_value, provenance_name in ((self.heldout, "heldout"), (self.synthetic, "synthetic"), (self.selected, "selected")):
+            if provenance_value is not None and not isinstance(provenance_value, bool):
+                raise ValidationError("malformed " + provenance_name + " provenance")
         if self.observed_at is not None and not isinstance(self.observed_at, datetime):
             raise ValidationError("observed_at must be datetime")
 
@@ -52,12 +55,18 @@ class CalibrationRecord:
             raise ValidationError("calibration record must be mapping")
         try:
             values: Any = data
+            required = ("heldout", "synthetic", "selected", "sample_id", "observed_at", "policy_id")
+            missing = [key for key in required if key not in values]
+            if missing:
+                raise ValidationError("missing calibration provenance: " + ",".join(missing))
             at = values.get("observed_at")
             if isinstance(at, str):
                 at = datetime.fromisoformat(at.replace("Z", "+00:00"))
-            return cls(values["probability"], values["label"], values.get("decision", "approve"), values["model_id"], values["prompt_version"], values["schema_version"], values["repository"], values.get("heldout"), values.get("synthetic"), at, values.get("selected"), values.get("sample_id", ""), values.get("policy_id", ""))
+            return cls(values["probability"], values["label"], values.get("decision", "approve"), values["model_id"], values["prompt_version"], values["schema_version"], values["repository"], values.get("heldout"), values.get("synthetic"), at, values.get("selected"), values.get("sample_id", ""), values.get("policy_id", ""), values.get("stratum"))
         except KeyError as exc:
             raise ValidationError("missing calibration identity: " + str(exc)) from exc
+        except ValueError as exc:
+            raise ValidationError("malformed calibration timestamp") from exc
 
 
 @dataclass(frozen=True)
@@ -88,11 +97,32 @@ class CalibrationReport:
     duplicate_approval_ids: Tuple[str, ...] = ()
     missing_sample_ids: bool = False
     policy_ids: Tuple[str, ...] = ()
+    candidate_prs: int = 0
+    selected_prs: int = 0
+    coverage: float = 0.0
+    abstention_rate: float = 1.0
+    selected_error_rate: Optional[float] = None
+    strata: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
 
-    def confidence_for(self, decision: str, probability: float) -> bool:
-        if decision not in DECISIONS or isinstance(probability, bool) or not isinstance(probability, (int, float)) or not math.isfinite(float(probability)):
+    @property
+    def error_rate(self) -> Optional[float]:
+        return self.selected_error_rate
+
+    @property
+    def selection_coverage(self) -> float:
+        return self.coverage
+
+    @property
+    def abstention_count(self) -> int:
+        return max(0, self.candidate_prs - self.selected_prs)
+
+    def confidence_for(self, decision: str, probability: float, min_samples: int = 1, max_error: float = .10) -> bool:
+        if (not isinstance(decision, str) or (decision not in DECISIONS and not decision.startswith("checklist:"))) or isinstance(probability, bool) or not isinstance(probability, (int, float)) or not math.isfinite(float(probability)):
             return False
-        return any(_decision_group(r.decision, decision) and r.probability >= probability for r in self.records)
+        if min_samples < 1 or not 0 <= max_error <= 1:
+            return False
+        points = self.reliability.get(decision, ())
+        return any(point.count >= min_samples and (point.lower <= probability < point.upper or (point.upper == 1.0 and probability == 1.0)) and point.mean_probability + 1e-12 >= probability and point.observed_rate + 1e-12 >= probability - max_error for point in points)
 
     def covers(self, decisions: Iterable[str]) -> bool:
         return all(any(_decision_group(r.decision, d) for r in self.records) for d in decisions)
@@ -144,16 +174,31 @@ def summarize(records: Iterable[Union[CalibrationRecord, Mapping[str, object]]],
             weighted += len(chosen) / len(group) * abs(mean - observed)
             points.append(ReliabilityPoint(lower, upper, len(chosen), mean, observed))
         ece[decision], reliability[decision] = weighted, tuple(points)
-    approvals = tuple(r for r in parsed if r.decision == "approve" and r.selected is True)
+    selected_rows = tuple(r for r in parsed if r.decision == "approve" and r.selected is True)
+    unique_approvals = {}
+    for row in selected_rows:
+        if row.sample_id and row.sample_id not in unique_approvals:
+            unique_approvals[row.sample_id] = row
+    approvals = tuple(unique_approvals.values())
     errors = sum(not r.label for r in approvals)
+    candidate_ids = {r.sample_id for r in parsed if r.decision == "approve" and r.sample_id}
+    candidate_count, selected_count = len(candidate_ids), len(approvals)
+    coverage = selected_count / candidate_count if candidate_count else 0.0
+    strata = {}
+    for stratum in sorted({r.stratum for r in parsed if r.stratum is not None}):
+        candidates = {r.sample_id for r in parsed if r.decision == "approve" and r.stratum == stratum and r.sample_id}
+        chosen = tuple(r for r in approvals if r.stratum == stratum)
+        strata[stratum] = {"candidate_prs": float(len(candidates)), "selected_prs": float(len(chosen)), "coverage": len(chosen) / len(candidates) if candidates else 0.0, "error_rate": sum(not r.label for r in chosen) / len(chosen) if chosen else 0.0}
     duplicate_ids = {r.sample_id for r in parsed if r.sample_id and sum(x.sample_id == r.sample_id and x.decision == r.decision for x in parsed) > 1}
-    duplicate_approval_ids = {r.sample_id for r in approvals if r.sample_id and sum(x.sample_id == r.sample_id for x in approvals) > 1}
-    return CalibrationReport(parsed, brier, ece, reliability, errors, len(approvals), false_approval_upper_bound(errors, len(approvals)) if approvals else 1.0, identity, all(r.heldout is True for r in parsed), any(r.synthetic is True for r in parsed), max((r.observed_at for r in parsed if r.observed_at is not None), default=None), min((r.observed_at for r in parsed if r.observed_at is not None), default=None), float(selection_threshold), tuple(sorted(duplicate_ids)), tuple(sorted(duplicate_approval_ids)), any(not r.sample_id for r in parsed), tuple(sorted({r.policy_id for r in parsed})))
+    duplicate_approval_ids = {r.sample_id for r in selected_rows if r.sample_id and sum(x.sample_id == r.sample_id for x in selected_rows) > 1}
+    return CalibrationReport(parsed, brier, ece, reliability, errors, len(approvals), false_approval_upper_bound(errors, len(approvals)) if approvals else 1.0, identity, all(r.heldout is True for r in parsed), any(r.synthetic is True for r in parsed), max((r.observed_at for r in parsed if r.observed_at is not None), default=None), min((r.observed_at for r in parsed if r.observed_at is not None), default=None), float(selection_threshold), tuple(sorted(duplicate_ids)), tuple(sorted(duplicate_approval_ids)), any(not r.sample_id for r in parsed), tuple(sorted({r.policy_id for r in parsed})), candidate_count, selected_count, coverage, 1.0 - coverage, errors / len(approvals) if approvals else None, strata)
 
 
 def readiness(report: CalibrationReport, *, min_samples: int = 299, min_samples_per_decision: int = 30, model_id: str = "", prompt_version: str = "", schema_version: str = "", repository: str = "", policy_id: str = "", required_decisions: Iterable[str] = DEFAULT_REQUIRED_DECISIONS, max_age_days: Optional[float] = 90, now: Optional[datetime] = None, false_approval_limit: float = .01, selection_threshold: Optional[float] = .90, max_ece: float = .10, max_brier: float = .10) -> Tuple[bool, Tuple[str, ...]]:
     reasons = []
     required = tuple(required_decisions)
+    if "checklist" in required:
+        reasons.append("aggregate checklist calibration unsupported")
     if len(report.records) < min_samples:
         reasons.append("insufficient samples")
     if min_samples_per_decision < 1:
@@ -188,18 +233,17 @@ def readiness(report: CalibrationReport, *, min_samples: int = 299, min_samples_
     if selection_threshold is not None and report.selection_threshold != selection_threshold:
         reasons.append("selection threshold mismatch")
     current = now or datetime.now(timezone.utc)
-    if max_age_days is not None:
-        if report.oldest_at is None or any(r.observed_at is None for r in report.records):
-            reasons.append("timestamp provenance missing")
-        else:
-            for record in report.records:
-                observed = record.observed_at
-                assert observed is not None
-                aware = observed if observed.tzinfo else observed.replace(tzinfo=timezone.utc)
-                if aware > current:
-                    reasons.append("future timestamp")
-                if (current - aware).total_seconds() > max_age_days * 86400:
-                    reasons.append("stale evidence")
+    if report.oldest_at is None or any(r.observed_at is None for r in report.records):
+        reasons.append("timestamp provenance missing")
+    else:
+        for record in report.records:
+            observed = record.observed_at
+            assert observed is not None
+            aware = observed if observed.tzinfo else observed.replace(tzinfo=timezone.utc)
+            if aware > current:
+                reasons.append("future timestamp")
+            if max_age_days is not None and (current - aware).total_seconds() > max_age_days * 86400:
+                reasons.append("stale evidence")
     return not reasons, tuple(dict.fromkeys(reasons))
 
 

@@ -4,7 +4,7 @@
 
 **Blocked by:** 04, 05, 06
 
-**Status:** ready-for-agent
+**Status:** implemented locally; production activation gated
 
 - [ ] Deployment configuration requires explicit target repository, owner routes, auth, trusted-check allowlist, freshness, and mode.
 - [ ] Trusted-branch scheduled polling/dispatch is isolated behind provider adapter and documents retry/idempotency behavior; a single CLI path supports review, GitHub review, and poll modes.
@@ -13,3 +13,7 @@
 - [ ] Permission/API failures route safely and cannot produce approval.
 - [ ] GitHub reads handle open/draft state, app/check identity, diff truncation, exact SHA revalidation, and idempotent decision keys.
 - [ ] No target is hard-coded; synthetic adapter remains runnable.
+
+## Implementation evidence
+
+See [final validation](../../../docs/evidence/validation.md). Checklist above is the original acceptance contract; production-dependent items remain subject to [production DoD](../../../docs/acceptance.md).

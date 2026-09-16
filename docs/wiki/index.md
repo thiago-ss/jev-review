@@ -25,4 +25,4 @@ Persistent, source-linked knowledge for the Jev autonomous review workflow. Read
 
 ## Status
 
-Pages are design research, not evidence that Jev has completed an experiment or obtained a GitHub installation. Claims marked `Not verified` require implementation or deployment evidence.
+Local implementation and synthetic experiments are complete; see [final validation](../evidence/validation.md). No GitHub installation or production calibration is claimed. Claims marked `Not verified` require deployment evidence.

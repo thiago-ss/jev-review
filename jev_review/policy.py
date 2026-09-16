@@ -11,6 +11,8 @@ from typing import Iterable, Mapping, Optional, Tuple, Union
 from .calibration import CalibrationReport, DEFAULT_REQUIRED_DECISIONS, readiness
 from .models import PullRequest, Review, RiskLevel, ValidationError, parse_pr, parse_review
 
+POLICY_IMPLEMENTATION_VERSION = "1"
+
 
 class Action(str, Enum):
     AUTO_APPROVE = "auto_approve"
@@ -38,6 +40,7 @@ class PolicyConfig:
     calibration_prompt_version: str = ""
     calibration_schema_version: str = ""
     policy_id: str = ""
+    trusted_context_id: str = ""
     required_checklist_decisions: Tuple[str, ...] = DEFAULT_REQUIRED_DECISIONS[2:]
     calibration_min_samples_per_decision: int = 30
     calibration_max_ece: float = .10
@@ -57,7 +60,9 @@ class PolicyConfig:
             raise ValidationError("invalid per-decision calibration floor")
         if isinstance(self.min_confidence, bool) or isinstance(self.selection_threshold, bool) or not 0 <= self.min_confidence <= 1 or not 0 <= self.selection_threshold <= 1:
             raise ValidationError("invalid minimum confidence")
-        if not all(isinstance(item, str) and item for item in self.required_checklist_decisions):
+        if self.selection_threshold != self.min_confidence:
+            raise ValidationError("selection threshold must equal minimum decision confidence")
+        if not all(isinstance(item, str) and item.startswith("checklist:") and len(item) > len("checklist:") for item in self.required_checklist_decisions):
             raise ValidationError("invalid checklist calibration decisions")
         if not 0 <= self.calibration_max_ece <= 1 or not 0 <= self.calibration_max_brier <= 1:
             raise ValidationError("invalid calibration quality limits")
@@ -97,14 +102,18 @@ def _sensitive(pr: PullRequest, patterns: Iterable[str]) -> bool:
 
 def policy_fingerprint(config: PolicyConfig) -> str:
     """Hash approval-affecting static policy; omit live SHA/check/model evidence."""
+    checks = dict(config.trusted_required_checks)
+    checks.update(config.required_checks_by_repo)
     payload = {
+        "implementation": POLICY_IMPLEMENTATION_VERSION,
         "allowlisted_repositories": sorted(config.allowlisted_repositories),
-        "required_checks_by_repo": {k: sorted(v) for k, v in sorted(config.required_checks_by_repo.items())},
+        "required_checks_by_repo": {k: sorted(v) for k, v in sorted(checks.items())},
         "sensitive_paths": list(config.sensitive_paths), "max_files": config.max_files,
         "max_additions": config.max_additions, "max_deletions": config.max_deletions,
         "max_patch_bytes": config.max_patch_bytes, "min_confidence": config.min_confidence,
-        "selection_threshold": config.selection_threshold, "mode": config.mode,
+        "selection_threshold": config.selection_threshold, "calibration_max_age_days": config.calibration_max_age_days,
         "required_checklist_decisions": list(config.required_checklist_decisions),
+        "trusted_context_id": config.trusted_context_id,
         "calibration_min_samples": config.calibration_min_samples,
         "calibration_min_samples_per_decision": config.calibration_min_samples_per_decision,
         "calibration_max_ece": config.calibration_max_ece, "calibration_max_brier": config.calibration_max_brier,
@@ -115,6 +124,8 @@ def policy_fingerprint(config: PolicyConfig) -> str:
 def evaluate(pr: Union[PullRequest, Mapping[str, object]], review: Union[Review, Mapping[str, object]], config: Optional[PolicyConfig] = None, calibration: Optional[CalibrationReport] = None) -> PolicyDecision:
     config = config or PolicyConfig()
     reasons = []
+    if not config.policy_id or config.policy_id != policy_fingerprint(config):
+        reasons.append("policy identity is missing or does not match configuration")
     try:
         pr = parse_pr(pr)
         review = parse_review(review)
@@ -130,6 +141,10 @@ def evaluate(pr: Union[PullRequest, Mapping[str, object]], review: Union[Review,
         reasons.append("required checklist has blocker or uncertainty")
     if any(item.confidence < config.min_confidence for item in review.required_checklist_items):
         reasons.append("checklist confidence below threshold")
+    expected_checklist = {item[len("checklist:"):] for item in config.required_checklist_decisions}
+    actual_checklist = {item.name[len("checklist:"):] if item.name.startswith("checklist:") else item.name for item in review.required_checklist_items}
+    if actual_checklist != expected_checklist:
+        reasons.append("required named checklist fields do not match policy")
     if review.concerns:
         reasons.append("review has concerns")
     if pr.repository not in config.allowlisted_repositories:
@@ -155,9 +170,9 @@ def evaluate(pr: Union[PullRequest, Mapping[str, object]], review: Union[Review,
             reasons.extend("calibration: " + reason for reason in calibration_reasons)
         elif not calibration.covers(("approve", "risk", "checklist")):
             reasons.append("calibration lacks per-decision coverage")
-        elif not all(calibration.confidence_for("checklist:" + item.name.lstrip("checklist:"), item.confidence) for item in review.required_checklist_items):
+        elif not all(calibration.confidence_for("checklist:" + (item.name[len("checklist:"):] if item.name.startswith("checklist:") else item.name), item.confidence, config.calibration_min_samples_per_decision, config.calibration_max_ece) for item in review.required_checklist_items):
             reasons.append("calibration lacks checklist confidence support")
-        elif not calibration.confidence_for("approve", review.approve_confidence) or not calibration.confidence_for("risk", review.risk_confidence):
+        elif not calibration.confidence_for("approve", review.approve_confidence, config.calibration_min_samples_per_decision, config.calibration_max_ece) or not calibration.confidence_for("risk", review.risk_confidence, config.calibration_min_samples_per_decision, config.calibration_max_ece):
             reasons.append("calibration lacks decision confidence support")
     if reasons:
         return PolicyDecision(Action.ESCALATE, tuple(dict.fromkeys(reasons)))

@@ -1,0 +1,15 @@
+{
+  "allowlisted_repositories": ["OWNER/REPO"],
+  "trusted_checks": {"ci/test": [12345]},
+  "check_freshness_seconds": 86400,
+  "bot_login": "jev-bot",
+  "trusted_reviewers": ["@trusted-user", "@trusted-org/reviewers"],
+  "fallback_reviewers": ["@trusted-user"],
+  "codeowners": "*.py @trusted-user\n",
+  "policy_version": "v1",
+  "calibration": "private/calibration.json",
+  "calibration_model_id": "jev-1.13.0",
+  "calibration_prompt_version": "review-v1",
+  "calibration_schema_version": "2",
+  "calibration_policy_id": "policy-v1"
+}

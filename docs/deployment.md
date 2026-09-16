@@ -8,10 +8,14 @@ Choose one target `OWNER/REPO`; configure the same exact identity in the allowli
 
 Use `TYPESAFE_API_KEY` and a scoped `GITHUB_TOKEN` or GitHub App installation token. Keep both server-side, in repository/environment secrets. Reading requires access to contents, pull requests and checks; posting reviews/reviewer requests additionally requires pull-request write permission. Review exact permissions against the GitHub API and selected token type.
 
+The included workflow is disabled unless `JEV_ENABLED=true`; `JEV_EXECUTE=true` selects its separate write-permission job. Set `JEV_REPOSITORY` and create trusted `config/production.json`. A workflow's default `GITHUB_TOKEN` is scoped to its repository: run the bot there, or provision a target-scoped GitHub App/token for cross-repository operation. Verify the repository/organization setting permitting Actions to approve PRs and whether the bot's approval satisfies the desired branch rules. Do not assume that an API approval replaces required human CODEOWNER review.
+
+The bundled workflow runs in the configured target repository and passes its token to the adapter. For a separate target repository, supply an installation token through the deployment environment and keep the workflow checkout on this bot repository's default branch.
+
 ## Rollout
 
 1. Run local tests and inspect the acceptance evidence.
-2. Configure a protected bot default branch and trusted workflow. Never checkout or execute the PR head with bot credentials. Lock down changes to bot code, policy, calibration and ownership configuration.
+2. Configure a protected bot default branch and trusted workflow. Never checkout or execute the PR head with bot credentials. Lock down changes to bot code, policy, calibration and ownership configuration. Restrict any deployment environment holding write secrets to that trusted branch; a branch checkout alone cannot protect a workflow definition that an authorized repository writer modifies.
 3. Run `github` and `poll` in dry-run using read-only permissions. Inspect structured decisions, model versions, owner routes, missing patches, CI identity and freshness failures.
 4. Collect and adjudicate representative labels using the [evaluation protocol](evidence/labeling-protocol.md). Freeze configuration before the held-out evaluation. Resolve every failed readiness gate.
 5. Require branch protection to dismiss stale approvals after new commits and require current trusted checks. The adapter binds reviews to `commit_id` and rechecks state, but GitHub's review creation API is not a transaction spanning head/base/check reads and review publication.

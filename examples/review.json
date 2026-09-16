@@ -1,0 +1,33 @@
+{
+  "pr": {
+    "repository": "acme/widget",
+    "number": 1,
+    "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "files": [
+      {
+        "path": "README.md",
+        "patch": "@@ -1 +1 @@\n-Instal the package.\n+Install the package.\n",
+        "additions": 1,
+        "deletions": 1
+      }
+    ]
+  },
+  "review": {
+    "approve": true,
+    "risk": "low",
+    "approve_confidence": 0.99,
+    "risk_confidence": 0.99,
+    "required_checklist_items": [
+      {"name": "correctness", "status": "pass", "confidence": 0.99},
+      {"name": "security", "status": "pass", "confidence": 0.99},
+      {"name": "tests", "status": "pass", "confidence": 0.99}
+    ]
+  },
+  "config": {
+    "allowlisted_repositories": ["acme/widget"],
+    "required_checks_by_repo": {"acme/widget": ["ci/test"]},
+    "passed_checks_by_repo": {"acme/widget": ["ci/test"]},
+    "expected_head_sha_by_repo": {"acme/widget": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  }
+}

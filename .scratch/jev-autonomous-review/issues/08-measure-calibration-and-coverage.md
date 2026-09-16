@@ -4,10 +4,14 @@
 
 **Blocked by:** 05, 06
 
-**Status:** ready-for-agent
+**Status:** harness implemented; representative evaluation blocked
 
 - [ ] Evaluation metadata freezes model/provider/prompt/config, policy version, repository/risk scope, label rubric, and dataset splits.
 - [ ] Reports coverage, abstention, observed false approvals, routing quality, sample counts, and representative strata.
 - [ ] Report can support the proposed 299 zero-error approvals evidence bar for a simple exact one-sided 95% ≤1% claim, while labeling it unmet until data exists.
 - [ ] Calibration artifacts become invalid after model/provider/policy changes or detected drift.
 - [ ] No benchmark or self-reported confidence is labeled calibration evidence.
+
+## Evidence
+
+Per-field calibration, exact selected-approval bound, coverage/abstention and supplied strata are implemented. Representative labels, routing accuracy and production drift observations are unavailable. See [protocol](../../../docs/evidence/labeling-protocol.md) and [validation](../../../docs/evidence/validation.md).

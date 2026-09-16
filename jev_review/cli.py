@@ -7,9 +7,10 @@ works when no GitHub credentials or adapter are installed.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, fields, is_dataclass, replace
 from datetime import datetime
 from enum import Enum
+import hashlib
 import json
 import os
 import sys
@@ -18,7 +19,7 @@ from typing import Any, Mapping, Optional, Sequence
 from .calibration import readiness, summarize
 from .models import parse_pr, parse_review
 from .owners import parse_and_route
-from .policy import Action, PolicyConfig, PolicyDecision, evaluate
+from .policy import Action, PolicyConfig, PolicyDecision, evaluate, policy_fingerprint
 
 
 def _json_value(value: Any) -> Any:
@@ -43,6 +44,19 @@ def _read_json(path: str) -> Any:
         raise ValueError("invalid JSON input: " + str(exc)) from exc
 
 
+def _trusted_context_id(checks: Mapping[str, Any], freshness: Any) -> str:
+    """Stable identity for trusted check names, app IDs, and freshness policy."""
+    normalized = {}
+    for name, app_ids in checks.items():
+        if not isinstance(name, str) or not isinstance(app_ids, (list, tuple, set, frozenset)):
+            raise ValueError("trusted check config malformed")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in app_ids):
+            raise ValueError("trusted check app IDs malformed")
+        normalized[name] = sorted(app_ids)
+    payload = {"checks": normalized, "freshness_seconds": 86_400.0 if freshness is None else freshness}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
 def _repo_map(value: Any, *, values: bool = False) -> dict[str, Any]:
     if value is None:
         return {}
@@ -57,13 +71,14 @@ def _repo_map(value: Any, *, values: bool = False) -> dict[str, Any]:
 
 
 def _policy_config(raw: Optional[Mapping[str, Any]], *, execute: bool) -> PolicyConfig:
-    raw = raw or {}
+    if raw is None:
+        raw = {}
     if not isinstance(raw, Mapping):
         raise ValueError("config must be an object")
     allowed = raw.get("allowlisted_repositories", raw.get("allowlist", ()))
     if not isinstance(allowed, (list, tuple, set, frozenset)):
         raise ValueError("allowlist must be an array")
-    fields = {
+    config_fields = {
         "allowlisted_repositories": frozenset(allowed),
         "required_checks_by_repo": _repo_map(raw.get("required_checks_by_repo")),
         "passed_checks_by_repo": _repo_map(raw.get("passed_checks_by_repo"), values=True),
@@ -80,9 +95,21 @@ def _policy_config(raw: Optional[Mapping[str, Any]], *, execute: bool) -> Policy
         "calibration_model_id": raw.get("calibration_model_id", ""),
         "calibration_prompt_version": raw.get("calibration_prompt_version", ""),
         "calibration_schema_version": raw.get("calibration_schema_version", ""),
+        "calibration_min_samples_per_decision": raw.get("calibration_min_samples_per_decision", PolicyConfig.calibration_min_samples_per_decision),
+        "calibration_max_ece": raw.get("calibration_max_ece", PolicyConfig.calibration_max_ece),
+        "calibration_max_brier": raw.get("calibration_max_brier", PolicyConfig.calibration_max_brier),
+        "required_checklist_decisions": tuple(raw.get("required_checklist_decisions", PolicyConfig.required_checklist_decisions)),
+        "trusted_required_checks": _repo_map(raw.get("trusted_required_checks")),
+        "trusted_passed_checks": _repo_map(raw.get("trusted_passed_checks"), values=True),
+        "exact_head_sha_by_repo": dict(raw.get("exact_head_sha_by_repo", {})),
+        "policy_id": raw.get("policy_id", ""),
         "mode": "active" if execute else "shadow",
     }
-    return PolicyConfig(**fields)
+    config_fields["trusted_context_id"] = raw.get("trusted_context_id", "")
+    config = PolicyConfig(**config_fields)
+    if not config.policy_id:
+        config = replace(config, policy_id=policy_fingerprint(config))
+    return config
 
 
 def _calibration(raw: Any) -> Any:
@@ -97,21 +124,93 @@ def _calibration(raw: Any) -> Any:
     return summarize(raw)
 
 
+def _calibration_reference(raw: Any) -> str:
+    if raw is None:
+        return "not-verified"
+    return raw if isinstance(raw, str) else "embedded"
+
+
+def _gate_results(decision: PolicyDecision) -> list[Mapping[str, str]]:
+    if not decision.reasons:
+        return [{"status": "pass", "reason": "all policy gates passed"}]
+    unknown_terms = ("missing", "stale", "unavailable", "not passing", "not exact", "mismatch", "unknown")
+    return [{"status": "unknown" if any(term in reason.lower() for term in unknown_terms) else "fail", "reason": reason} for reason in decision.reasons]
+
+
+def _route_breakdown(review: Any, owners: Sequence[str]) -> Mapping[str, Any]:
+    findings = []
+    for concern in getattr(review, "concerns", ()):
+        findings.append({"message": concern.message, "path": concern.path, "line": concern.line, "severity": concern.severity.value})
+    risk = getattr(getattr(review, "risk", None), "value", None)
+    return {"owners": list(owners), "urgency": "high" if risk in ("high", "critical") else "normal", "risk": risk, "findings": findings}
+
+
+def _summary_json(value: Mapping[str, Any]) -> str:
+    """Keep untrusted metadata inside one escaped JSON code block."""
+    body = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).replace("```", "\\u0060\\u0060\\u0060")
+    return "```json\n" + body + "\n```"
+
+
+def _audit_envelope(pr: Any, review: Any, decision: PolicyDecision, config: PolicyConfig, *, execute: bool, policy_version: str = "v1", calibration_ref: str = "not-verified", provider_result: Any = None, route: Sequence[str] = ()) -> Mapping[str, Any]:
+    model_id = getattr(provider_result, "model", "") or getattr(config, "calibration_model_id", "") or "not-verified"
+    prompt_version = getattr(config, "calibration_prompt_version", "") or "not-verified"
+    schema_version = getattr(config, "calibration_schema_version", "") or "not-verified"
+    identity = {"repository": pr.repository, "pull_request": pr.number, "base_sha": pr.base_sha, "head_sha": pr.head_sha, "policy_id": config.policy_id, "model_id": model_id, "prompt_version": prompt_version, "schema_version": schema_version}
+    audit_id = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    provider = {}
+    if provider_result is not None:
+        provider = {"request_id": getattr(provider_result, "request_id", None), "answers": _json_value(getattr(provider_result, "answers", {})), "usage": _json_value(getattr(provider_result, "usage", {}))}
+    return {
+        "audit_id": audit_id,
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "change": {"repository": pr.repository, "pull_request": pr.number, "base_sha": pr.base_sha, "head_sha": pr.head_sha, "observed_head_sha": pr.head_sha, "author": getattr(pr, "author", None), "base_branch": getattr(pr, "base_branch", None)},
+        "policy": {"version": policy_version, "policy_id": config.policy_id, "action": decision.action.value, "reasons": list(decision.reasons), "gates": _gate_results(decision)},
+        "model": {"provider": "typesafe-jev" if provider_result is not None else "supplied-review", "model_id": model_id, "prompt_version": prompt_version, "schema_version": schema_version},
+        "calibration": {"reference": calibration_ref, "verified": decision.action in (Action.AUTO_APPROVE, Action.SHADOW) and calibration_ref != "not-verified"},
+        "review": {"risk": getattr(getattr(review, "risk", None), "value", None), "approve_confidence": getattr(review, "approve_confidence", None), "risk_confidence": getattr(review, "risk_confidence", None), "checklist": _json_value(getattr(review, "required_checklist_items", ())), "concerns": _json_value(getattr(review, "concerns", ())), "suggestions": list(getattr(review, "suggestions", ()))},
+        "route": _route_breakdown(review, route),
+        "provider": provider,
+        "dry_run": not execute,
+    }
+
+
+def _plan_value(plan: Any) -> Any:
+    """Serialize public plan fields without embedding private approval context."""
+    if is_dataclass(plan):
+        return {item.name: _json_value(getattr(plan, item.name)) for item in fields(plan) if item.name != "approval_context"}
+    value = _json_value(plan)
+    return dict(value) if isinstance(value, Mapping) else value
+
+
+def _build_plan(client: Any, snapshot: Any, decision: PolicyDecision, *, reviewers: Sequence[str], team_reviewers: Sequence[str], trusted_reviewers: Sequence[str], policy_version: str, summary: str, config: PolicyConfig, review: Any = None, calibration: Any = None) -> Any:
+    from .github import ApprovalContext
+    kwargs: dict[str, Any] = {"allowlisted_repositories": tuple(config.allowlisted_repositories)}
+    if decision.action is Action.AUTO_APPROVE:
+        kwargs["approval_context"] = ApprovalContext(review=review, policy=config, calibration=calibration)
+    return client.build_plan(snapshot, decision, reviewers, team_reviewers, trusted_reviewers, policy_version, summary, **kwargs)
+
+
 def _calibrate_command(input_path: str, config_path: Optional[str]) -> Mapping[str, Any]:
     records = _read_json(input_path)
     if isinstance(records, Mapping):
         records = records.get("records", records.get("calibration"))
     if not isinstance(records, list):
         raise ValueError("calibration input must be an array or object with records")
-    config = _github_config(config_path)
+    config = dict(_github_config(config_path))
+    nested = config.get("policy")
+    if isinstance(nested, Mapping):
+        merged = dict(nested)
+        merged.update({key: value for key, value in config.items() if key not in ("policy", "calibration")})
+        config = merged
+    from .provider import PROMPT_VERSION, SCHEMA_VERSION
     report = summarize(records, bins=int(config.get("bins", 10)), selection_threshold=float(config.get("selection_threshold", .90)))
     model_id = str(config.get("calibration_model_id", config.get("model_id", "")))
     ready, reasons = readiness(
         report,
         min_samples=int(config.get("calibration_min_samples", config.get("min_samples", 299))),
         model_id=model_id,
-        prompt_version=str(config.get("calibration_prompt_version", config.get("prompt_version", ""))),
-        schema_version=str(config.get("calibration_schema_version", config.get("schema_version", ""))),
+        prompt_version=PROMPT_VERSION,
+        schema_version=SCHEMA_VERSION,
         repository=str(config.get("repository", "")),
         policy_id=str(config.get("calibration_policy_id", config.get("policy_id", ""))),
         max_age_days=config.get("calibration_max_age_days", config.get("max_age_days", 90)),
@@ -130,8 +229,9 @@ def review_payload(payload: Mapping[str, Any], *, execute: bool = False, input_p
     review_data = payload.get("review")
     provider_model = None
     provider_request_id = None
+    provider_result = None
     if review_data is None:
-        from .provider import JevProvider
+        from .provider import JevProvider, PROMPT_VERSION, SCHEMA_VERSION
 
         provider = JevProvider(model=str(payload.get("model", os.environ.get("JEV_MODEL", "jev-latest"))))
         review, provider_result = provider.review_with_result(pr)
@@ -143,7 +243,7 @@ def review_payload(payload: Mapping[str, Any], *, execute: bool = False, input_p
     if provider_model:
         # Compare calibration identity to Jev's returned model, never a
         # request alias such as ``jev-latest``.
-        config = replace(config, calibration_model_id=provider_model)
+        config = replace(config, calibration_model_id=provider_model, calibration_prompt_version=PROMPT_VERSION, calibration_schema_version=SCHEMA_VERSION)
     decision = evaluate(pr, review, config, calibration)
     result = {
         "action": decision.action.value,
@@ -153,6 +253,7 @@ def review_payload(payload: Mapping[str, Any], *, execute: bool = False, input_p
         "review": _json_value(review),
         "dry_run": not execute,
         "execution": {"performed": False, "simulated": True, "reason": "JSON review path has no external mutation"},
+        "audit": _audit_envelope(pr, review, decision, config, execute=execute, policy_version=str((payload.get("config") or {}).get("policy_version", "v1")) if isinstance(payload.get("config") or {}, Mapping) else "v1", calibration_ref=_calibration_reference(payload.get("calibration")), provider_result=provider_result),
     }
     if provider_model:
         result["provider_model"] = provider_model
@@ -190,56 +291,70 @@ def _split_github_routes(owners: Sequence[str]) -> tuple[tuple[str, ...], tuple[
 
 def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapping[str, Any]) -> Mapping[str, Any]:
     from .github import ExecutionResult, GitHubClient
-    from .provider import JevProvider, JevProviderError
+    from .provider import JevProvider, JevProviderError, PROMPT_VERSION, SCHEMA_VERSION
 
     trusted = config_raw.get("trusted_checks", config_raw.get("required_checks", {}))
     if not isinstance(trusted, Mapping):
         raise ValueError("trusted_checks must map check names to app IDs")
-    freshness = config_raw.get("check_freshness_seconds")
+    freshness = config_raw.get("check_freshness_seconds", 86_400.0)
+    if freshness is None:
+        freshness = 86_400.0
     client = GitHubClient(bot_login=config_raw.get("bot_login"))
     snapshot = client.snapshot(repository, number, trusted, freshness)
     configured_trusted = tuple(config_raw.get("trusted_reviewers", ()))
-    route = parse_and_route(
-        snapshot.pull_request.changed_paths,
-        str(config_raw.get("codeowners", "")),
-        configured_trusted,
-        tuple(config_raw.get("fallback_reviewers", ())),
-    )
+    fallback_reviewers = tuple(config_raw.get("fallback_reviewers", ()))
+    resolve_reviewers = getattr(client, "reviewers_for_snapshot", None)
+    if callable(resolve_reviewers):
+        route = resolve_reviewers(snapshot, configured_trusted, fallback=fallback_reviewers)
+    else:
+        route = parse_and_route(snapshot.pull_request.changed_paths, str(config_raw.get("codeowners", "")), configured_trusted, fallback_reviewers)
+    author = getattr(snapshot.pull_request, "author", "")
+    if isinstance(author, str) and author:
+        route = tuple(owner for owner in route if _github_owner_name(owner) != author)
     route_users, route_teams = _split_github_routes(route)
-    trusted_for_github = tuple(dict.fromkeys(configured_trusted + tuple(_github_owner_name(v) for v in configured_trusted)))
+    trusted_for_github = tuple(dict.fromkeys(configured_trusted + fallback_reviewers + tuple(_github_owner_name(v) for v in configured_trusted + fallback_reviewers)))
     # Expected SHA and passed checks are captured from one snapshot and then
     # revalidated by GitHubClient.execute() immediately before a write.
-    policy_raw = dict(config_raw.get("policy", {}))
+    nested_policy = config_raw.get("policy", {})
+    if not isinstance(nested_policy, Mapping):
+        raise ValueError("policy config must be an object")
+    policy_raw = dict(nested_policy)
+    for key in ("calibration_model_id", "calibration_prompt_version", "calibration_schema_version", "calibration_min_samples", "calibration_min_samples_per_decision", "calibration_max_ece", "calibration_max_brier", "calibration_max_age_days", "selection_threshold", "min_confidence", "required_checklist_decisions", "policy_id"):
+        if key in config_raw and key not in policy_raw:
+            policy_raw[key] = config_raw[key]
     policy_raw.setdefault("allowlisted_repositories", config_raw.get("allowlisted_repositories", ()))
     policy_raw["required_checks_by_repo"] = {repository: list(snapshot.required_checks)}
     policy_raw["passed_checks_by_repo"] = {repository: list(snapshot.pull_request.passed_checks)}
     policy_raw["expected_head_sha_by_repo"] = {repository: snapshot.pull_request.head_sha}
+    policy_raw["trusted_context_id"] = _trusted_context_id(trusted, freshness)
     calibration = _calibration(config_raw.get("calibration"))
+    config = _policy_config(policy_raw, execute=execute)
     provider_result = None
     try:
         provider = JevProvider(model=str(config_raw.get("model", os.environ.get("JEV_MODEL", "jev-latest"))))
         review, provider_result = provider.review_with_result(snapshot.pull_request)
     except JevProviderError as exc:
         decision = PolicyDecision(Action.ESCALATE, ("Jev provider unavailable: " + str(exc),))
-        plan = client.build_plan(snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=json.dumps({"action": "escalate", "reasons": list(decision.reasons), "route": list(route)}, sort_keys=True))
+        plan = _build_plan(client, snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=_summary_json({"action": "escalate", "reasons": list(decision.reasons), "route": _route_breakdown(None, route)}), config=config, calibration=calibration)
         if repository not in frozenset(config_raw.get("allowlisted_repositories", ())):
             execution = ExecutionResult(not execute, True, ("repository is not allowlisted; no external write",))
         else:
             execution = client.execute(plan, dry_run=not execute)
-        return {"repository": repository, "pull_request": number, "decision": _json_value(decision), "route": list(route), "plan": _json_value(plan), "execution": _json_value(execution), "provider_error": str(exc), "dry_run": not execute}
+        return {"repository": repository, "pull_request": number, "decision": _json_value(decision), "route": list(route), "plan": _plan_value(plan), "execution": _json_value(execution), "provider_error": str(exc), "dry_run": not execute, "audit": _audit_envelope(snapshot.pull_request, None, decision, config, execute=execute, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), route=route)}
     if provider_result is None:
         raise RuntimeError("Jev provider returned no result")
-    config = _policy_config(policy_raw, execute=execute)
     # Compare calibration identity to Jev's returned model, never a request
     # alias such as ``jev-latest``.
-    config = replace(config, calibration_model_id=provider_result.model)
+    config = replace(config, calibration_model_id=provider_result.model, calibration_prompt_version=PROMPT_VERSION, calibration_schema_version=SCHEMA_VERSION)
     decision = evaluate(snapshot.pull_request, review, config, calibration)
-    configured_users, configured_teams = _split_github_routes(tuple(config_raw.get("reviewers", ()))), _split_github_routes(tuple(config_raw.get("team_reviewers", ())))
-    reviewers = tuple(dict.fromkeys(configured_users[0] + route_users))
-    team_reviewers = tuple(dict.fromkeys(configured_teams[1] + route_teams))
+    configured_users = _split_github_routes(tuple(config_raw.get("reviewers", ())))[0]
+    configured_teams = _split_github_routes(tuple(config_raw.get("team_reviewers", ())))[1]
+    reviewers = tuple(dict.fromkeys(configured_users + route_users))
+    team_reviewers = tuple(dict.fromkeys(configured_teams + route_teams))
     trusted_reviewers = trusted_for_github
-    summary = json.dumps({"action": decision.action.value, "reasons": list(decision.reasons), "risk": review.risk.value, "approve_confidence": review.approve_confidence, "risk_confidence": review.risk_confidence, "checklist": [_json_value(item) for item in review.required_checklist_items], "paths": list(snapshot.pull_request.changed_paths), "route": list(route)}, sort_keys=True)
-    plan = client.build_plan(snapshot, decision, reviewers, team_reviewers, trusted_reviewers, str(config_raw.get("policy_version", "v1")), summary)
+    summary_data = {"action": decision.action.value, "reasons": list(decision.reasons), "risk": review.risk.value, "approve_confidence": review.approve_confidence, "risk_confidence": review.risk_confidence, "checklist": [_json_value(item) for item in review.required_checklist_items], "paths": list(snapshot.pull_request.changed_paths), "route": _route_breakdown(review, route)}
+    summary = _summary_json(summary_data)
+    plan = _build_plan(client, snapshot, decision, reviewers=reviewers, team_reviewers=team_reviewers, trusted_reviewers=trusted_reviewers, policy_version=str(config_raw.get("policy_version", "v1")), summary=summary, config=config, review=review, calibration=calibration)
     if execute and repository not in config.allowlisted_repositories:
         execution = ExecutionResult(False, True, ("repository is not allowlisted; no external write",))
     else:
@@ -252,8 +367,9 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
         "provider_model": provider_result.model,
         "provider_request_id": provider_result.request_id,
         "route": list(route),
-        "plan": _json_value(plan),
+        "plan": _plan_value(plan),
         "execution": _json_value(execution),
+        "audit": _audit_envelope(snapshot.pull_request, review, decision, config, execute=execute, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), provider_result=provider_result, route=route),
     }
 
 
@@ -271,7 +387,16 @@ def _github_command(args: argparse.Namespace) -> Mapping[str, Any]:
     from .github import GitHubClient
 
     client = GitHubClient()
-    pulls = client.list_open_pull_requests(args.repo)
+    pulls: list[Mapping[str, Any]] = []
+    for page in range(1, 101):
+        page_pulls = client.list_open_pull_requests(args.repo, page=page, per_page=100)
+        pulls.extend(page_pulls)
+        if len(pulls) > 10_000:
+            raise RuntimeError("open pull request pagination exceeded local limit")
+        if len(page_pulls) < 100:
+            break
+    else:
+        raise RuntimeError("open pull request pagination exceeded local limit")
     results = []
     for pull in pulls:
         number = pull.get("number") if isinstance(pull, Mapping) else None

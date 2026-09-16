@@ -1,0 +1,8 @@
+{
+  "repository": "acme/widget",
+  "model_id": "jev-1.13.0",
+  "prompt_version": "review-v1",
+  "schema_version": "2",
+  "policy_id": "example-policy",
+  "max_age_days": null
+}

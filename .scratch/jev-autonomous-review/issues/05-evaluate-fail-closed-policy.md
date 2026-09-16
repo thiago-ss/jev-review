@@ -4,10 +4,14 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** implemented locally; production activation gated
 
 - [ ] Typed outcomes are `approve`, `request-human-review`, and `abstain` with gate-by-gate reasons.
 - [ ] Approval fails closed for changed SHA, non-allowlisted repository, high/critical risk, absent calibration evidence, stale/mismatched/untrusted checks, incomplete config, or non-live mode.
 - [ ] Decision records evaluated identity, policy/model/provider versions, confidence/calibration status, evidence timestamps, and dry-run marker.
 - [ ] Adversarial unit tests prove each gate and combinations of unknown evidence prevent approval.
 - [ ] Pure evaluator has no network or mutation side effects.
+
+## Implementation evidence
+
+See [final validation](../../../docs/evidence/validation.md). Checklist above is the original acceptance contract; production-dependent items remain subject to [production DoD](../../../docs/acceptance.md).

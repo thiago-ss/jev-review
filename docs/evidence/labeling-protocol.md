@@ -21,6 +21,8 @@ Calibration and routing are separate outcomes. Report approval/risk/checklist Br
 
 ## Evidence integrity
 
+Calibration rows use **selected-answer correctness**: `probability` is the probability assigned to the emitted Boolean/risk/checklist answer, and `label` is whether that answer agrees with the adjudicated label. For a rejected unsafe PR, approval `label` is `true` (the rejection was correct), even though its adjudicated safe-to-approve value is `false`. `selected` is a separate flag: whether the frozen complete approval policy would autonomously approve this PR. For selected approval rows, `label=false` is a false approval. Use one shared immutable PR identifier across its different decision fields; never duplicate the same identifier/field pair. Schema 2 maps checklist answers to binary pass/fail; low probability causes abstention in policy, not an invented probability for a derived warning category.
+
 Synthetic examples test plumbing and adversarial behavior only. They must remain explicitly marked synthetic and cannot satisfy production readiness. Calibration artifacts are trusted deployment inputs: restrict write access to maintainers, review changes, preserve their source manifest and labels, and retain an audit trail. Software can reject missing or inconsistent provenance; it cannot certify that a supplied human label is honest.
 
 ## Current gate
