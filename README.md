@@ -2,7 +2,7 @@
 
 A small autonomous PR review bot built around TypeSafe's Jev. It consumes structured PR metadata and patches, asks finite typed questions, then applies deterministic approval gates. Uncertain or risky reviews route to trusted owners with a structured explanation. Suggestions are advisory; the bot never edits or merges code.
 
-**Status:** local implementation validated; deployment disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
+**Status:** GitHub App installed on `thiago-ss/jev-review`; scheduled shadow reviews enabled; approval writes disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
 
 ## Run locally
 

@@ -1,0 +1,219 @@
+{
+  "run_url": "https://github.com/thiago-ss/jev-review/actions/runs/35133673080",
+  "fixture": "hand-authored documentation-only pilot PR, not calibration evidence",
+  "output": {
+    "count": 1,
+    "dry_run": true,
+    "repository": "thiago-ss/jev-review",
+    "results": [
+      {
+        "audit": {
+          "audit_id": "463aa45b0b728501d3b8742fe949f3a97677a804132ef609daf3ab28c527c7bd",
+          "calibration": {
+            "reference": "not-verified",
+            "verified": false
+          },
+          "change": {
+            "author": "thiago-ss",
+            "base_branch": "main",
+            "base_sha": "2b4b0321c730919fff470e04cc8e89e0a7fba08f",
+            "head_sha": "c846b8bb8b34308d8277723b9d71bba9f15e4b53",
+            "observed_head_sha": "c846b8bb8b34308d8277723b9d71bba9f15e4b53",
+            "pull_request": 1,
+            "repository": "thiago-ss/jev-review"
+          },
+          "dry_run": true,
+          "generated_at": "2026-09-16T18:19:37.947348+00:00",
+          "model": {
+            "model_id": "jev-1.13.0",
+            "prompt_version": "review-v1",
+            "provider": "typesafe-jev",
+            "schema_version": "2"
+          },
+          "policy": {
+            "action": "escalate",
+            "gates": [
+              {
+                "reason": "checklist confidence below threshold",
+                "status": "fail"
+              },
+              {
+                "reason": "decision confidence below threshold",
+                "status": "fail"
+              },
+              {
+                "reason": "no calibration evidence",
+                "status": "fail"
+              }
+            ],
+            "policy_id": "49906d9efe267c9cef14b0ab083b580564a345333890af0d4f0f06c00518ded1",
+            "reasons": [
+              "checklist confidence below threshold",
+              "decision confidence below threshold",
+              "no calibration evidence"
+            ],
+            "version": "v1"
+          },
+          "provider": {
+            "answers": {
+              "approval": {
+                "choice": "approve",
+                "confidence": 0.77,
+                "probabilities": {
+                  "approve": 0.84,
+                  "hold": 0.02,
+                  "review": 0.14
+                },
+                "type": "choice"
+              },
+              "correctness": {
+                "noul": 0.93,
+                "type": "noul"
+              },
+              "risk": {
+                "choice": "low",
+                "confidence": 0.96,
+                "probabilities": {
+                  "critical": 0.0,
+                  "high": 0.0,
+                  "low": 0.98,
+                  "medium": 0.02
+                },
+                "type": "choice"
+              },
+              "security": {
+                "noul": 0.92,
+                "type": "noul"
+              },
+              "tests": {
+                "noul": 0.76,
+                "type": "noul"
+              }
+            },
+            "request_id": "req_01a0ab7216d27ad792c159ed7e50c6d3",
+            "usage": {
+              "input_tokens": 1177,
+              "output_tokens": 131
+            }
+          },
+          "review": {
+            "approve_confidence": 0.84,
+            "checklist": [
+              {
+                "blocking": false,
+                "confidence": 0.93,
+                "name": "correctness",
+                "status": "pass"
+              },
+              {
+                "blocking": false,
+                "confidence": 0.92,
+                "name": "security",
+                "status": "pass"
+              },
+              {
+                "blocking": false,
+                "confidence": 0.76,
+                "name": "tests",
+                "status": "pass"
+              }
+            ],
+            "concerns": [],
+            "risk": "low",
+            "risk_confidence": 0.98,
+            "suggestions": []
+          },
+          "route": {
+            "findings": [],
+            "owners": [],
+            "risk": "low",
+            "urgency": "normal"
+          }
+        },
+        "decision": {
+          "action": "escalate",
+          "approve": false,
+          "reasons": [
+            "checklist confidence below threshold",
+            "decision confidence below threshold",
+            "no calibration evidence"
+          ]
+        },
+        "execution": {
+          "dry_run": true,
+          "operations": [
+            "COMMENT review at c846b8bb8b34308d8277723b9d71bba9f15e4b53"
+          ],
+          "skipped": false
+        },
+        "plan": {
+          "allowlisted_repositories": [
+            "thiago-ss/jev-review"
+          ],
+          "base_sha": "2b4b0321c730919fff470e04cc8e89e0a7fba08f",
+          "body": "jev-review:v1:thiago-ss/jev-review:1:c846b8bb8b34308d8277723b9d71bba9f15e4b53:COMMENT\n\n```json\n{\"action\":\"escalate\",\"approve_confidence\":0.84,\"checklist\":[{\"blocking\":false,\"confidence\":0.93,\"name\":\"correctness\",\"status\":\"pass\"},{\"blocking\":false,\"confidence\":0.92,\"name\":\"security\",\"status\":\"pass\"},{\"blocking\":false,\"confidence\":0.76,\"name\":\"tests\",\"status\":\"pass\"}],\"paths\":[\"docs/pilot-review.md\"],\"reasons\":[\"checklist confidence below threshold\",\"decision confidence below threshold\",\"no calibration evidence\"],\"risk\":\"low\",\"risk_confidence\":0.98,\"route\":{\"findings\":[],\"owners\":[],\"risk\":\"low\",\"urgency\":\"normal\"}}\n```",
+          "event": "COMMENT",
+          "freshness_seconds": 86400.0,
+          "head_sha": "c846b8bb8b34308d8277723b9d71bba9f15e4b53",
+          "marker": "jev-review:v1:thiago-ss/jev-review:1:c846b8bb8b34308d8277723b9d71bba9f15e4b53:COMMENT",
+          "number": 1,
+          "repository": "thiago-ss/jev-review",
+          "required_checks": [
+            "test (3.12)",
+            "test (3.9)"
+          ],
+          "reviewers": [],
+          "team_reviewers": [],
+          "trusted_check_app_ids": {
+            "test (3.12)": [
+              15368
+            ],
+            "test (3.9)": [
+              15368
+            ]
+          },
+          "trusted_reviewers": [
+            "thiago-ss"
+          ]
+        },
+        "provider_model": "jev-1.13.0",
+        "provider_request_id": "req_01a0ab7216d27ad792c159ed7e50c6d3",
+        "pull_request": 1,
+        "repository": "thiago-ss/jev-review",
+        "review": {
+          "approve": true,
+          "approve_confidence": 0.84,
+          "concerns": [],
+          "native_confidences": {
+            "approval": 0.77,
+            "risk": 0.96
+          },
+          "required_checklist_items": [
+            {
+              "blocking": false,
+              "confidence": 0.93,
+              "name": "correctness",
+              "status": "pass"
+            },
+            {
+              "blocking": false,
+              "confidence": 0.92,
+              "name": "security",
+              "status": "pass"
+            },
+            {
+              "blocking": false,
+              "confidence": 0.76,
+              "name": "tests",
+              "status": "pass"
+            }
+          ],
+          "risk": "low",
+          "risk_confidence": 0.98,
+          "suggestions": []
+        },
+        "route": []
+      }
+    ]
+  }
+}

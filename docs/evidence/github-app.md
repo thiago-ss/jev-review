@@ -31,3 +31,13 @@ The existing authenticated Jev evaluation remains documented in [live observatio
 ## Registration correction
 
 GitHub rejected the initial manifest because its inactive webhook still used a loopback URL. Removed the optional webhook configuration entirely for this polling-only app; localhost remains only the browser callback. GitHub subsequently displayed the Create GitHub App form without validation errors. All 65 local tests and registration-helper mypy checks pass. Webhook secrets are optional in the conversion response because the runtime does not use webhooks.
+
+## Installed pilot and real shadow run
+
+App `jev-review-thiago-ss` (ID `4968910`) is registered. Its private key and the Jev key were staged as Actions secrets, with target scope `thiago-ss/jev-review`. `JEV_ENABLED=true`, `JEV_EXECUTE=false`: scheduled read-only operation is active. The registration listener was removed after successful credential receipt.
+
+Created [documentation-only pilot PR #1](https://github.com/thiago-ss/jev-review/pull/1), then closed it after validation to avoid repeating paid inference against a test fixture. No merge occurred. Adding `config/` exposed setuptools auto-discovery failure in [initial CI](https://github.com/thiago-ss/jev-review/actions/runs/35133451071). Explicit runtime-package discovery fixed it; registration state tests were also isolated from real local credentials. All 65 local tests passed with real credentials present. [Updated pilot CI](https://github.com/thiago-ss/jev-review/actions/runs/35133604350) passed both Python versions.
+
+[Final App workflow 35133673080](https://github.com/thiago-ss/jev-review/actions/runs/35133673080) succeeded: scoped read-only installation-token creation, PR snapshot, Jev inference and token cleanup all completed. The live write job was skipped. [Structured output](github-app-pilot.json) records exact head `c846b8bb8b34308d8277723b9d71bba9f15e4b53`, model `jev-1.13.0`, low risk and deterministic escalation because confidence/calibration gates failed. Both trusted CI checks passed; no CI-failure reason remained. GitHub review API confirmed zero reviews from the Jev App.
+
+The only trusted reviewer is also this pilot PR's author, so the route is empty by design: GitHub cannot request author self-review. A second trusted human/team is needed to test reviewer requests on owner-authored PRs. This run proves App authentication and shadow review of a real PR, not production calibration, active review publication or useful autonomous approval coverage.

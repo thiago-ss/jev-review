@@ -1,6 +1,6 @@
 # 10: Register and run as an installable GitHub App
 
-**Status:** implementation validated; account registration/installation pending
+**Status:** App registered and installed; real shadow workflow verified; approval writes disabled
 **Requested outcome:** Create a real GitHub App with predefined permissions; install it on selected repositories and run the existing reviewer under that identity.
 
 ## Contract

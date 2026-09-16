@@ -1,6 +1,6 @@
 # Deployment runbook
 
-Status: **not deployed**. No live GitHub approval, comment or reviewer request was made during development.
+Status: **deployed in shadow mode** on `thiago-ss/jev-review` as `jev-review-thiago-ss`. Scheduled polling is enabled; `JEV_EXECUTE=false`. No live bot approval, comment or reviewer request has been performed.
 
 ## Required configuration
 
@@ -31,8 +31,8 @@ App registration requests contents read, checks read and pull requests write. Ea
 
 ## Current blockers
 
-- Pilot target is `thiago-ss/jev-review`; fallback reviewer is repository owner `thiago-ss`. App registration and installation remain to be confirmed.
-- GitHub deployment identity, permissions, required check App IDs and branch protection are unverified.
+- Pilot target is `thiago-ss/jev-review`; fallback reviewer is repository owner `thiago-ss`. App registration and installation-token authentication are verified.
+- App identity, scoped read token and required CI App IDs are verified. Branch protection and write-mode operation remain unverified.
 - Representative held-out labeled PR corpus is absent; production calibration and safe autonomous coverage remain unmeasured.
 
 References: [GitHub reviews API](https://docs.github.com/en/rest/pulls/reviews), [review requests](https://docs.github.com/en/rest/pulls/review-requests), [secure Actions use](https://docs.github.com/en/actions/reference/security/secure-use).
