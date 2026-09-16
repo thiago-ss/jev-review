@@ -8,9 +8,9 @@ Choose one target `OWNER/REPO`; configure the same exact identity in the allowli
 
 Use `TYPESAFE_API_KEY` and a scoped `GITHUB_TOKEN` or GitHub App installation token. Keep both server-side, in repository/environment secrets. Reading requires access to contents, pull requests and checks; posting reviews/reviewer requests additionally requires pull-request write permission. Review exact permissions against the GitHub API and selected token type.
 
-The included workflow is disabled unless `JEV_ENABLED=true`; `JEV_EXECUTE=true` selects its separate write-permission job. Set `JEV_REPOSITORY` and create trusted `config/production.json`. A workflow's default `GITHUB_TOKEN` is scoped to its repository: run the bot there, or provision a target-scoped GitHub App/token for cross-repository operation. Verify the repository/organization setting permitting Actions to approve PRs and whether the bot's approval satisfies the desired branch rules. Do not assume that an API approval replaces required human CODEOWNER review.
+The included workflow uses a real GitHub App installation token. Follow the [App registration and setup guide](github-app.md). The controller's default `GITHUB_TOKEN` only checks out trusted bot code; a separately minted App token accesses the configured target. The workflow is disabled unless `JEV_ENABLED=true`; `JEV_EXECUTE=true` selects pull-request write permissions. Tokens are restricted to the configured installation owner/repository, which must match `JEV_REPOSITORY`.
 
-The bundled workflow runs in the configured target repository and passes its token to the adapter. For a separate target repository, supply an installation token through the deployment environment and keep the workflow checkout on this bot repository's default branch.
+App registration requests contents read, checks read and pull requests write. Each dry-run token is narrowed to reads. Store the App private key and Jev key as Actions secrets; store the App client ID and installation target as variables. Set `bot_login` from the actual App slug, not an invented bot username. GitHub App approvals do not automatically replace required human CODEOWNER reviews.
 
 ## Rollout
 
@@ -31,7 +31,7 @@ The bundled workflow runs in the configured target repository and passes its tok
 
 ## Current blockers
 
-- Target repository and trusted human owners are unspecified.
+- Pilot target is `thiago-ss/jev-review`; fallback reviewer is repository owner `thiago-ss`. App registration and installation remain to be confirmed.
 - GitHub deployment identity, permissions, required check App IDs and branch protection are unverified.
 - Representative held-out labeled PR corpus is absent; production calibration and safe autonomous coverage remain unmeasured.
 

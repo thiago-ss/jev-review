@@ -19,6 +19,8 @@ Persistent, source-linked knowledge for the Jev autonomous review workflow. Read
 - [Calibration and selective prediction](./sources/calibration-selective-prediction.md): primary research informing confidence, abstention, and risk claims.
 - [Jev live-wire synthetic smoke](./sources/jev-live-smoke.md): two authenticated endpoint smoke cases; integration evidence only, not calibration evidence.
 
+- [GitHub App registration and installation tokens](./sources/github-app-installation.md): predefined permissions and scoped scheduled execution.
+
 ## Operations
 
 - [Log](./log.md): append-only wiki operations and evidence updates.

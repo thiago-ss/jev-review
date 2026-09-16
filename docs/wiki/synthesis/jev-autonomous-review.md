@@ -13,7 +13,7 @@ Jev should be a small decision system around a structured Review packet. TypeSaf
 
 ## Decisions
 
-- Local Markdown is the current tracker because no remote or target repository is configured.
+- Local Markdown remains the tracker. Source code is now hosted at `thiago-ss/jev-review`; the review target is a separate deployment choice.
 - Dry-run is default; no code edits, pushes, or merges are permitted. Approval/reviewer-request writes require explicit `--execute` plus gates.
 - Approval requires unchanged head SHA, allowlisted repository, low risk, calibrated high confidence, and all trusted checks passing.
 - Unknown, stale, conflicting, or missing evidence routes to human review.
@@ -26,7 +26,7 @@ Before live approval, freeze model/provider, prompt/config, policy version, repo
 
 ## Open questions
 
-- Which deployment configuration will provide authenticated metadata, diff, review, and trusted-check evidence?
+- GitHub App installation tokens now provide the planned deployment identity; see [App research](../sources/github-app-installation.md). Registration and installation still require observed GitHub confirmation.
 - Which repository owner and trusted-check allowlist will deployment configure?
 - What labeling protocol defines a false approval and representative risk strata?
 - How are model/provider versions and policy changes invalidating calibration handled?

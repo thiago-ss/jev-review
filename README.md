@@ -25,6 +25,10 @@ The calibration example is intentionally synthetic and reports `ready: false`; p
 
 Dry-run is the default. `review --execute` only simulates active policy evaluation locally; it never calls GitHub. Only the `github` and `poll` commands can write externally, and only with explicit `--execute`.
 
+## Installable GitHub App
+
+Use the [GitHub App setup guide](docs/github-app.md) to register predefined permissions, install on selected repositories and run with short-lived scoped tokens. The trusted controller workflow defaults to disabled/read-only operation.
+
 ## GitHub integration
 
 ```sh

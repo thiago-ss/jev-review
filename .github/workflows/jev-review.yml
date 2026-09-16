@@ -11,18 +11,29 @@ concurrency:
 
 permissions:
   contents: read
-  checks: read
-  pull-requests: read
 
 env:
   JEV_REPOSITORY: ${{ vars.JEV_REPOSITORY }}
+  JEV_APP_CLIENT_ID: ${{ vars.JEV_APP_CLIENT_ID }}
+  JEV_APP_INSTALLATION_OWNER: ${{ vars.JEV_APP_INSTALLATION_OWNER }}
+  JEV_APP_INSTALLATION_REPOSITORY: ${{ vars.JEV_APP_INSTALLATION_REPOSITORY }}
   JEV_CONFIG: config/production.json
 
 jobs:
   dry-run:
     if: vars.JEV_ENABLED == 'true' && vars.JEV_EXECUTE != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
+      - name: Validate scoped App target
+        run: |
+          test -n "$JEV_REPOSITORY"
+          test -n "$JEV_APP_CLIENT_ID"
+          test -n "$JEV_APP_INSTALLATION_OWNER"
+          test -n "$JEV_APP_INSTALLATION_REPOSITORY"
+          test "$JEV_REPOSITORY" = "$JEV_APP_INSTALLATION_OWNER/$JEV_APP_INSTALLATION_REPOSITORY"
+          case "$JEV_APP_INSTALLATION_OWNER" in */*|*[!A-Za-z0-9._-]*) exit 1;; esac
+          case "$JEV_APP_INSTALLATION_REPOSITORY" in */*|*[!A-Za-z0-9._-]*) exit 1;; esac
       - name: Checkout trusted bot branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -32,23 +43,41 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
+      - name: Mint read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.JEV_APP_CLIENT_ID }}
+          private-key: ${{ secrets.JEV_APP_PRIVATE_KEY }}
+          owner: ${{ vars.JEV_APP_INSTALLATION_OWNER }}
+          repositories: ${{ vars.JEV_APP_INSTALLATION_REPOSITORY }}
+          permission-contents: read
+          permission-checks: read
+          permission-pull-requests: read
       - name: Poll pull requests (dry run)
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          test -n "$JEV_REPOSITORY"
           test -f "$JEV_CONFIG"
           python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --dry-run
 
   live:
     if: vars.JEV_ENABLED == 'true' && vars.JEV_EXECUTE == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
-      checks: read
-      pull-requests: write
     steps:
+      - name: Validate scoped App target
+        run: |
+          test -n "$JEV_REPOSITORY"
+          test -n "$JEV_APP_CLIENT_ID"
+          test -n "$JEV_APP_INSTALLATION_OWNER"
+          test -n "$JEV_APP_INSTALLATION_REPOSITORY"
+          test "$JEV_REPOSITORY" = "$JEV_APP_INSTALLATION_OWNER/$JEV_APP_INSTALLATION_REPOSITORY"
+          case "$JEV_APP_INSTALLATION_OWNER" in */*|*[!A-Za-z0-9._-]*) exit 1;; esac
+          case "$JEV_APP_INSTALLATION_REPOSITORY" in */*|*[!A-Za-z0-9._-]*) exit 1;; esac
       - name: Checkout trusted bot branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,11 +87,21 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
+      - name: Mint write-capable GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.JEV_APP_CLIENT_ID }}
+          private-key: ${{ secrets.JEV_APP_PRIVATE_KEY }}
+          owner: ${{ vars.JEV_APP_INSTALLATION_OWNER }}
+          repositories: ${{ vars.JEV_APP_INSTALLATION_REPOSITORY }}
+          permission-contents: read
+          permission-checks: read
+          permission-pull-requests: write
       - name: Poll pull requests (live, explicitly enabled)
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          test -n "$JEV_REPOSITORY"
           test -f "$JEV_CONFIG"
           python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --execute

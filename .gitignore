@@ -11,3 +11,6 @@ dist/
 build/
 *.egg-info/
 .local/
+
+# GitHub App private keys (registration exports belong in .local/).
+*.pem
