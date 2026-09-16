@@ -1,0 +1,23 @@
+[
+  {
+    "path": "karpathy-llm-wiki.md",
+    "url": "https://gist.githubusercontent.com/karpathy/442a6bf555914893e9891c11519de94f/raw/llm-wiki.md",
+    "retrieved_at": "2026-09-16T13:50:54.299164+00:00",
+    "sha256": "dc3efe98ae62f23dd08acad13aba2e95287beb20b6bec2f4af0423557fe37401",
+    "immutable_snapshot": true
+  },
+  {
+    "path": "typesafe-sdk-readme.md",
+    "url": "https://raw.githubusercontent.com/typesafe-ai/typesafe-sdk-python/main/README.md",
+    "retrieved_at": "2026-09-16T13:50:54.492265+00:00",
+    "sha256": "06aa97c3d7b31ea2eb0b43d3f2f687ad3e48e29802d539064331aaff8243adad",
+    "immutable_snapshot": true
+  },
+  {
+    "path": "typesafe-wire-response.py",
+    "url": "https://raw.githubusercontent.com/typesafe-ai/typesafe-sdk-python/main/src/typesafe_sdk/_core/response_types.py",
+    "retrieved_at": "2026-09-16T13:50:54.674514+00:00",
+    "sha256": "ef4427c12222864a0733be0310f02d82d59894f9acfbb722a0ff8c96d1180f47",
+    "immutable_snapshot": true
+  }
+]
