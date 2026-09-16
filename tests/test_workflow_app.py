@@ -55,7 +55,7 @@ class GitHubAppWorkflowTests(unittest.TestCase):
         self.assertIn('python-version: ["3.9", "3.12"]', VALIDATE_WORKFLOW)
         self.assertIn("timeout-minutes: 15", VALIDATE_WORKFLOW)
         self.assertIn("python -m pip install --disable-pip-version-check -e .", VALIDATE_WORKFLOW)
-        self.assertIn("python -m unittest discover -s tests -q", VALIDATE_WORKFLOW)
+        self.assertIn("python scripts/run_tests.py", VALIDATE_WORKFLOW)
         self.assertIn("python -m pip install --disable-pip-version-check 'mypy==2.3.1'", VALIDATE_WORKFLOW)
         self.assertIn("python -m mypy jev_review", VALIDATE_WORKFLOW)
         self.assertEqual(VALIDATE_WORKFLOW.count("if: matrix.python-version == '3.12'"), 2)

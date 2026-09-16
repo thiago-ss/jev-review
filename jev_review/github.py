@@ -19,6 +19,7 @@ from .models import ChangedFile, PullRequest
 Transport = Callable[[Request, float], Tuple[int, Mapping[str, str], bytes]]
 DEFAULT_API = "https://api.github.com"
 MAX_RESPONSE_BYTES = 2_000_000
+MAX_CHECK_OUTPUT_CHARS = 320
 
 
 class GitHubError(RuntimeError):
@@ -41,6 +42,7 @@ class GitHubSnapshot:
     required_checks: Tuple[str, ...]
     trusted_check_app_ids: Mapping[str, Tuple[int, ...]]
     freshness_seconds: Optional[float] = None
+    check_evidence: Tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -183,7 +185,8 @@ class GitHubClient:
         if isinstance(pull.get("deletions"), int) and sum(item.deletions for item in files) != pull["deletions"]:
             raise GitHubError("deletion count mismatch")
         policy = {str(name): tuple(int(app) for app in apps) for name, apps in dict(required_checks or {}).items()}
-        passed = self._passed_checks(repository, head["sha"], policy, freshness_seconds)
+        check_evidence: list[Mapping[str, Any]] = []
+        passed = self._passed_checks(repository, head["sha"], policy, freshness_seconds, check_evidence)
         latest = self.get_pull_request(repository, number)
         latest_base, latest_head = latest.get("base"), latest.get("head")
         if not isinstance(latest_base, Mapping) or not isinstance(latest_head, Mapping) or latest_base.get("sha") != base["sha"] or latest_head.get("sha") != head["sha"] or latest.get("state") != "open" or not isinstance(latest.get("draft"), bool) or latest.get("draft") is True or "merged_at" not in latest or latest.get("merged_at") is not None:
@@ -194,7 +197,7 @@ class GitHubClient:
         if not isinstance(author, str) or not isinstance(base_branch, str):
             raise GitHubError("pull request author/base branch metadata malformed")
         pr = PullRequest(repository, number, base["sha"], head["sha"], tuple(files), tuple(policy), passed, str(pull.get("title", "")), str(pull.get("body", "")), False, author, base_branch, head["sha"])
-        return GitHubSnapshot(pr, "open", bool(pull.get("draft", False)), False, tuple(policy), policy, freshness_seconds)
+        return GitHubSnapshot(pr, "open", bool(pull.get("draft", False)), False, tuple(policy), policy, freshness_seconds, tuple(check_evidence))
 
     def _all_files(self, repository: str, number: int) -> Tuple[Mapping[str, Any], ...]:
         result = []
@@ -209,7 +212,14 @@ class GitHubClient:
                 return tuple(result)
         raise GitHubError("changed files pagination exceeded local limit")
 
-    def _passed_checks(self, repository: str, head_sha: str, required: Mapping[str, Tuple[int, ...]], freshness_seconds: Optional[float]) -> Tuple[str, ...]:
+    def _passed_checks(
+        self,
+        repository: str,
+        head_sha: str,
+        required: Mapping[str, Tuple[int, ...]],
+        freshness_seconds: Optional[float],
+        evidence: Optional[list[Mapping[str, Any]]] = None,
+    ) -> Tuple[str, ...]:
         if not required:
             return ()
         runs = []
@@ -235,7 +245,19 @@ class GitHubClient:
             run = latest.get(name)
             app = run.get("app") if isinstance(run, Mapping) else None
             app_id = app.get("id") if isinstance(app, Mapping) else None
-            if run is None or run.get("head_sha") != head_sha or run.get("status") != "completed" or run.get("conclusion") != "success" or isinstance(app_id, bool) or not isinstance(app_id, int) or app_id not in app_ids or _stale(run, freshness_seconds):
+            trusted = not (
+                run is None
+                or run.get("head_sha") != head_sha
+                or run.get("status") != "completed"
+                or run.get("conclusion") != "success"
+                or isinstance(app_id, bool)
+                or not isinstance(app_id, int)
+                or app_id not in app_ids
+                or _stale(run, freshness_seconds)
+            )
+            if evidence is not None:
+                evidence.append(_check_evidence(name, run, app_id, trusted))
+            if not trusted:
                 continue
             passed.append(name)
         return tuple(passed)
@@ -461,6 +483,27 @@ def _stale(run: Mapping[str, Any], freshness_seconds: Optional[float]) -> bool:
         return (datetime.now(timezone.utc) - when).total_seconds() > freshness_seconds
     except ValueError:
         return True
+
+
+def _check_evidence(name: str, run: Optional[Mapping[str, Any]], app_id: Any, trusted: bool) -> Dict[str, Any]:
+    """Normalize one latest required check run for bounded presentation."""
+    evidence: Dict[str, Any] = {
+        "name": name,
+        "status": run.get("status") if isinstance(run, Mapping) and isinstance(run.get("status"), str) else None,
+        "conclusion": run.get("conclusion") if isinstance(run, Mapping) and isinstance(run.get("conclusion"), str) else None,
+        "head_sha": run.get("head_sha") if isinstance(run, Mapping) and isinstance(run.get("head_sha"), str) else None,
+        "app_id": app_id if isinstance(app_id, int) and not isinstance(app_id, bool) else None,
+        "completed_at": run.get("completed_at") if isinstance(run, Mapping) and isinstance(run.get("completed_at"), str) else None,
+        "details_url": run.get("details_url") if isinstance(run, Mapping) and isinstance(run.get("details_url"), str) else None,
+        "trusted": trusted,
+    }
+    output = run.get("output") if isinstance(run, Mapping) else None
+    if isinstance(output, Mapping):
+        for source, target in (("title", "title"), ("summary", "summary")):
+            value = output.get(source)
+            if isinstance(value, str):
+                evidence[target] = value[:MAX_CHECK_OUTPUT_CHARS]
+    return evidence
 
 
 def _run_key(run: Mapping[str, Any]) -> Tuple[int, str]:

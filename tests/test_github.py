@@ -37,7 +37,7 @@ class FakeGitHub:
         if path.endswith("/pulls/1/files"):
             return 200, {}, json.dumps([{"filename": "src/a.py", "status": "modified", "patch": "@@ -1 +1 @@\n-x\n+y", "additions": 1, "deletions": 1}]).encode()
         if path.endswith("/check-runs"):
-            runs = self.check_runs or [{"name": "ci", "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": 7}, "completed_at": self.check_completed_at}]
+            runs = self.check_runs if self.check_runs is not None else [{"name": "ci", "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": 7}, "completed_at": self.check_completed_at}]
             return 200, {}, json.dumps({"check_runs": runs}).encode()
         if path.endswith("/reviews"):
             return 200, {}, json.dumps(self.reviews).encode()
@@ -66,6 +66,47 @@ class GitHubTests(unittest.TestCase):
 
         fake.pull["head"]["sha"] = "c" * 40
         self.assertEqual(client.snapshot("o/r", 1, {"ci": [7]}).pull_request.passed_checks, ())
+
+    def test_snapshot_collects_bounded_check_run_evidence(self):
+        fake = FakeGitHub()
+        fake.check_runs = [{
+            "name": "ci",
+            "head_sha": HEAD,
+            "status": "completed",
+            "conclusion": "success",
+            "app": {"id": 7},
+            "completed_at": "2099-01-01T00:00:00Z",
+            "details_url": "https://github.com/o/r/actions/runs/12/job/34",
+            "output": {"title": "CI title", "summary": "S" * 1000},
+        }]
+        client = GitHubClient("token", api_url="https://example.test", transport=fake)
+        evidence = client.snapshot("o/r", 1, {"ci": [7]}).check_evidence
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["name"], "ci")
+        self.assertEqual(evidence[0]["status"], "completed")
+        self.assertEqual(evidence[0]["conclusion"], "success")
+        self.assertEqual(evidence[0]["head_sha"], HEAD)
+        self.assertEqual(evidence[0]["app_id"], 7)
+        self.assertEqual(evidence[0]["completed_at"], "2099-01-01T00:00:00Z")
+        self.assertEqual(evidence[0]["details_url"], "https://github.com/o/r/actions/runs/12/job/34")
+        self.assertTrue(evidence[0]["trusted"])
+        self.assertEqual(evidence[0]["title"], "CI title")
+        self.assertEqual(evidence[0]["summary"], "S" * 320)
+
+    def test_missing_or_untrusted_check_metadata_never_claims_passed(self):
+        for runs in (
+            [],
+            [{"name": "ci", "head_sha": HEAD, "status": "completed", "conclusion": "success", "app": {"id": 99}}],
+            [{"name": "ci", "status": "completed", "conclusion": "success", "app": {"id": 7}}],
+        ):
+            with self.subTest(runs=runs):
+                fake = FakeGitHub()
+                fake.check_runs = runs
+                client = GitHubClient("token", api_url="https://example.test", transport=fake)
+                snap = client.snapshot("o/r", 1, {"ci": [7]})
+                self.assertEqual(snap.pull_request.passed_checks, ())
+                self.assertEqual(len(snap.check_evidence), 1)
+                self.assertFalse(snap.check_evidence[0]["trusted"])
 
     def test_draft_and_missing_patch_fail_closed(self):
         fake = FakeGitHub({"state": "open", "draft": True, "merged_at": None, "base": {"sha": SHA}, "head": {"sha": HEAD}})

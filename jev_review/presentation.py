@@ -40,6 +40,7 @@ def render_review(
     provider_result: Optional[Any] = None,
     route: Sequence[str] = (),
     calibration_ref: Any = "not-verified",
+    check_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     """Render a GitHub-safe, visual review comment.
 
@@ -64,7 +65,8 @@ def render_review(
     sections.append("**Evidence status:** " + calibration_text)
     sections.append(_decision_table(parsed_review, calibrated))
     sections.append(_checklist_table(parsed_review, calibrated))
-    sections.append(_ci_table(parsed_pr))
+    sections.append(_ci_table(parsed_pr, check_evidence))
+    sections.append(_scope(parsed_pr))
     sections.append(_reasons_and_route(decision, parsed_review, route, provider_error))
     sections.append(_suggestions(parsed_review))
     sections.append(_provider_summary(provider_result, provider_error))
@@ -106,29 +108,28 @@ def _action(decision: Any) -> str:
 
 def _header(action: str, review: Optional[Review], provider_error: Optional[str]) -> str:
     labels = {
-        "auto_approve": ("🟢", "AUTO-APPROVE", "policy gates passed; approval remains a separate GitHub action"),
-        "shadow": ("🟡", "SHADOW", "informational review; no approval issued"),
-        "escalate": ("🔴", "HUMAN REVIEW", "policy requires human review"),
-        "unknown": ("⚪", "UNKNOWN", "policy action unavailable"),
+        "auto_approve": ("ELIGIBLE", "policy gates passed; approval remains a separate GitHub action"),
+        "shadow": ("SHADOW", "informational review; no approval issued"),
+        "escalate": ("HUMAN REVIEW", "policy requires human review"),
+        "unknown": ("UNKNOWN", "policy action unavailable"),
     }
-    icon, label, note = labels[action]
-    lines = ["## 🤖 Jev review · " + icon + " " + label, "> **Policy:** " + note]
+    label, note = labels[action]
+    lines = ["## Jev / Review receipt", "", "```text", " J E V   /   REVIEW", " " + "-" * 36, " DISPOSITION   " + label, " " + "-" * 36, "```", "", "**Policy:** " + note]
     if review is not None:
-        answer = "approve" if review.approve else "hold / review"
-        lines.append("> **Model answer:** " + ("✅ " if review.approve else "🟠 ") + answer)
+        lines.append("**Model answer:** " + ("approve" if review.approve else "hold / review"))
     if provider_error is not None:
-        lines.append("> **Provider:** ⚠️ unavailable — " + _safe_text(provider_error))
+        lines.append("**Provider:** unavailable - " + _safe_text(provider_error))
     elif review is None:
-        lines.append("> **Provider:** ⚠️ no typed review evidence supplied")
+        lines.append("**Provider:** no typed review evidence supplied")
     return "\n".join(lines)
 
 
 def _mode_note(config: Any) -> str:
     mode = getattr(config, "mode", None)
     if mode == "shadow":
-        return "**Mode:** 🟡 shadow — automatic approvals disabled; comment is informational."
+        return "**Mode:** shadow — automatic approvals disabled; comment is informational."
     if mode == "active":
-        return "**Mode:** 🟢 active — any approval still requires every policy gate."
+        return "**Mode:** active — any approval still requires every policy gate."
     return "**Mode:** unknown — write capability not established."
 
 
@@ -178,7 +179,7 @@ def _decision_table(review: Optional[Review], calibrated: bool) -> str:
     if review is None:
         return "### Decision evidence\n\n_No typed decision available._"
     rows = [
-        ("Approval", "✅ approve" if review.approve else "🟠 hold / review", review.approve_confidence),
+        ("Approval", "approve" if review.approve else "hold / review", review.approve_confidence),
         ("Risk", _risk_label(review.risk), review.risk_confidence),
     ]
     lines = ["### Decision evidence", "", "| Signal | Typed result | Model confidence (" + suffix + ") |", "| --- | --- | --- |"]
@@ -190,24 +191,52 @@ def _checklist_table(review: Optional[Review], calibrated: bool) -> str:
     if review is None:
         return ""
     suffix = "calibrated" if calibrated else "uncalibrated"
-    lines = ["### Required checklist", "", "| Check | Status | Blocking | Model confidence (" + suffix + ") |", "| --- | --- | --- | --- |"]
+    lines = ["### Model assessment", "", "| Check | Status | Blocking | Model confidence (" + suffix + ") |", "| --- | --- | --- | --- |"]
     for item in review.required_checklist_items[:MAX_CONCERNS]:
         status = item.status.value
-        icon = {"pass": "✅", "fail": "❌", "warn": "⚠️", "unknown": "❔"}.get(status, "❔")
-        lines.append("| " + _safe_text(item.name) + " | " + icon + " " + _safe_text(status) + " | " + ("yes" if item.blocking else "no") + " | " + _confidence(item.confidence) + " |")
+        lines.append("| " + _safe_text(item.name) + " | " + _safe_text(status) + " | " + ("yes" if item.blocking else "no") + " | " + _confidence(item.confidence) + " |")
+    lines.extend(("", "These are Jev assessments of the diff, not executed tests. The tests score describes test adequacy."))
     return "\n".join(lines)
 
 
-def _ci_table(pr: Any) -> str:
+def _ci_table(pr: Any, evidence: Sequence[Mapping[str, Any]] = ()) -> str:
     if pr is None:
         return ""
     required = _string_tuple(getattr(pr, "required_checks", ()))
     passed = set(_string_tuple(getattr(pr, "passed_checks", ())))
     if not required:
-        return "### Trusted CI\n\n_Unknown — no configured trusted checks supplied._"
-    lines = ["### Trusted CI", "", "| Required check | Result |", "| --- | --- |"]
+        return "### Executed checks\n\n_Unknown - no configured trusted checks supplied._"
+    by_name = {row.get("name"): row for row in evidence if isinstance(row, Mapping)}
+    lines = ["### Executed checks", "", "GitHub-reported results for the reviewed head. A passing job does not establish coverage.", "", "| Check | Verified result | Execution evidence |", "| --- | --- | --- |"]
     for name in required[:MAX_CONCERNS]:
-        lines.append("| " + _safe_text(name) + " | " + ("✅ passed" if name in passed else "❌ not passed / unknown") + " |")
+        row = by_name.get(name, {})
+        url = row.get("details_url", "")
+        repo = _string_attr(pr, "repository")
+        valid_url = isinstance(url, str) and re.fullmatch(r"https://github\.com/" + re.escape(repo) + r"/actions/runs/[0-9]+/job/[0-9]+", url)
+        link = "[Job logs](" + url + ")" if valid_url else "Link unavailable"
+        lines.append("| " + _safe_text(name) + " | " + ("PASS" if name in passed else "NOT VERIFIED") + " | " + link + " |")
+    # Keep provider-reported prose separate from trusted pass/fail status.
+    for name in required[:MAX_CONCERNS]:
+        row = by_name.get(name, {})
+        completed = row.get("completed_at")
+        if isinstance(completed, str):
+            lines.extend(("", "**" + _safe_text(name) + ":** completed " + _safe_text(completed) + "; App ID " + _safe_text(str(row.get("app_id", "unknown"))) + "."))
+        summary = row.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            lines.extend(("", "**Reported by " + _safe_text(name) + ":** " + _safe_text(summary)))
+    lines.extend(("", "Individual test names, counts and coverage are not supplied by check status. Open job logs for executed commands and assertions. Jev does not run the PR code."))
+    return "\n".join(lines)
+
+
+def _scope(pr: Any) -> str:
+    if pr is None:
+        return ""
+    files = getattr(pr, "files", ())
+    additions = sum(item.additions for item in files)
+    deletions = sum(item.deletions for item in files)
+    lines = ["<details>", "<summary>Review scope / " + str(len(files)) + " files / +" + str(additions) + " -" + str(deletions) + "</summary>", "", "| File | Added | Removed |", "| --- | ---: | ---: |"]
+    lines.extend("| " + _safe_text(item.path) + " | " + str(item.additions) + " | " + str(item.deletions) + " |" for item in files[:MAX_FILES])
+    lines.extend(("", "Input: PR metadata and file patches. No full-repository execution, coverage measurement or runtime security scan is performed by Jev.", "", "</details>"))
     return "\n".join(lines)
 
 
@@ -243,7 +272,7 @@ def _suggestions(review: Optional[Review]) -> str:
 
 def _provider_summary(provider_result: Any, provider_error: Optional[str]) -> str:
     if provider_error is not None:
-        return "### Provider evidence\n\n⚠️ **Unavailable:** " + _safe_text(provider_error)
+        return "### Provider evidence\n\n**Unavailable:** " + _safe_text(provider_error)
     if provider_result is None:
         return "### Provider evidence\n\n_No provider response supplied._"
     model = getattr(provider_result, "model", None)
@@ -323,14 +352,14 @@ def _confidence(value: Any) -> str:
         return "unknown"
     probability = float(value)
     filled = int(round(probability * 10))
-    return "`" + ("█" * filled) + ("░" * (10 - filled)) + "` " + str(round(probability * 100)) + "%"
+    return "`" + "[" + ("#" * filled) + ("." * (10 - filled)) + "]" + "` " + str(round(probability * 100)) + "%"
 
 
 def _risk_label(value: Any) -> str:
     raw = getattr(value, "value", value)
     if not isinstance(raw, str):
         return "unknown"
-    return {"low": "🟢 low", "medium": "🟡 medium", "high": "🟠 high", "critical": "🔴 critical"}.get(raw, "unknown")
+    return {"low": "low", "medium": "medium", "high": "high", "critical": "critical"}.get(raw, "unknown")
 
 
 def _usage(value: Any) -> str:

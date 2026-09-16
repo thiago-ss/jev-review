@@ -50,19 +50,31 @@ class PresentationTests(TestCase):
         with mock.patch.dict(os.environ, {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "thiago-ss/jev-review", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2"}, clear=False):
             body = render_review(make_pr(), make_review(), PolicyDecision(Action.SHADOW, ("shadow mode",)), PolicyConfig(mode="shadow"), provider, ("@maintainers",), "not-verified")
 
-        self.assertIn("## 🤖 Jev review", body)
+        self.assertIn("## Jev / Review receipt", body)
         self.assertIn("SHADOW", body)
         self.assertIn("Model answer", body)
         self.assertIn("uncalibrated", body)
-        self.assertIn("█████████", body)
+        self.assertIn("#########", body)
         self.assertIn("Exact head commit `" + HEAD + "`", body)
         self.assertIn("https://github.com/thiago-ss/jev-review/commit/" + HEAD, body)
         self.assertIn("https://github.com/thiago-ss/jev-review/actions/runs/123/attempt/2", body)
         self.assertIn("CI / test", body)
-        self.assertIn("✅ passed", body)
+        self.assertIn("PASS", body)
         self.assertIn("Raw structured evidence", body)
         self.assertIn("jev-1.13.0", body)
         self.assertIn("&#64;maintainers", body)
+
+    def test_ascii_receipt_links_real_jobs_without_inventing_test_counts(self):
+        evidence = ({"name": "CI / test", "details_url": "https://github.com/thiago-ss/jev-review/actions/runs/12/job/34", "completed_at": "2026-09-16T18:00:00Z", "app_id": 15368},)
+        body = render_review(make_pr(), make_review(), PolicyDecision(Action.ESCALATE, ("no calibration",)), PolicyConfig(), check_evidence=evidence)
+        self.assertIn("[#########.]", body)
+        self.assertIn("[Job logs](https://github.com/thiago-ss/jev-review/actions/runs/12/job/34)", body)
+        self.assertIn("not executed tests", body)
+        self.assertIn("NOT VERIFIED", body)
+        self.assertIn("Review scope / 1 files / +1 -1", body)
+        self.assertFalse(any(0x1F000 <= ord(c) <= 0x1FAFF or c in "✅❌⚠❔" for c in body))
+        bad = render_review(make_pr(), make_review(), PolicyDecision(Action.SHADOW, ()), PolicyConfig(), check_evidence=({"name": "CI / test", "details_url": "https://evil.example/steal"},))
+        self.assertNotIn("evil.example", bad)
 
     def test_untrusted_markdown_and_mentions_are_inert(self):
         concern = Concern("close ](https://evil.example) <script>alert(1)</script> @everyone", "src/[bad].py", 7, RiskLevel.HIGH)

@@ -337,7 +337,7 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
         review, provider_result = provider.review_with_result(snapshot.pull_request)
     except JevProviderError as exc:
         decision = PolicyDecision(Action.ESCALATE, ("Jev provider unavailable: " + str(exc),))
-        plan = _build_plan(client, snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=render_review(snapshot.pull_request, None, decision, config, route=route), config=config, calibration=calibration, comment_only=comment_only)
+        plan = _build_plan(client, snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=render_review(snapshot.pull_request, None, decision, config, route=route, check_evidence=getattr(snapshot, "check_evidence", ())), config=config, calibration=calibration, comment_only=comment_only)
         if repository not in frozenset(config_raw.get("allowlisted_repositories", ())):
             execution = ExecutionResult(not write, True, ("repository is not allowlisted; no external write",))
         else:
@@ -354,7 +354,7 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
     reviewers = tuple(dict.fromkeys(configured_users + route_users))
     team_reviewers = tuple(dict.fromkeys(configured_teams + route_teams))
     trusted_reviewers = trusted_for_github
-    summary = render_review(snapshot.pull_request, review, decision, config, provider_result=provider_result, route=route, calibration_ref=_calibration_reference(config_raw.get("calibration")))
+    summary = render_review(snapshot.pull_request, review, decision, config, provider_result=provider_result, route=route, calibration_ref=_calibration_reference(config_raw.get("calibration")), check_evidence=getattr(snapshot, "check_evidence", ()))
     plan = _build_plan(client, snapshot, decision, reviewers=reviewers, team_reviewers=team_reviewers, trusted_reviewers=trusted_reviewers, policy_version=str(config_raw.get("policy_version", "v1")), summary=summary, config=config, review=review, calibration=calibration, comment_only=comment_only)
     if write and repository not in config.allowlisted_repositories:
         execution = ExecutionResult(False, True, ("repository is not allowlisted; no external write",))

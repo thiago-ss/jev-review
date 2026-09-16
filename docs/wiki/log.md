@@ -39,3 +39,7 @@
 - Native GitHub Markdown presents risk, confidence and checklist/CI evidence; raw evidence stays collapsible. Scheduler comments default on after scheduling is enabled; `JEV_COMMENTS=false` opts out.
 
 - Validated default comments with a real App-authored review on PR #2. See [publication evidence](../evidence/pr-comments.md), including live-discovered JSON rendering correction and passing CI.
+
+## Monochrome review receipts and test evidence
+
+User requested emoji-free visual reviews and more evidence. Use compact ASCII disposition blocks and confidence meters, native Markdown tables, and expandable scope/raw data. Separate model assessment of test adequacy from executed CI. Carry required check metadata from the same snapshot used for trust gating; link exact jobs, preserving unknown states. CI logs individual test names and writes measured module counts to the job summary. No inferred coverage or invented test counts. See [test evidence guide](../test-evidence.md).
