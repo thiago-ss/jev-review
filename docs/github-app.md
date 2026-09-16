@@ -13,7 +13,7 @@ It has no repository contents-write or administration permission. Jev does not p
 
 ## Deployment shape
 
-Keep the code and secrets in `thiago-ss/jev-review` (the controller). Install the app on the selected target repository. The controller's trusted default-branch workflow polls the target hourly and supports manual dispatch. Each job mints a target-scoped installation token. Dry-run tokens have read-only permissions; live tokens add pull-request write. Webhooks are disabled, so no public webhook server is needed.
+Keep the code and secrets in `thiago-ss/jev-review` (the controller). Install the app on the selected target repository. The controller's trusted default-branch workflow polls the target hourly and supports manual dispatch. Each job mints a target-scoped installation token. Dry-run tokens have read-only permissions; comment and approval jobs add pull-request write. Webhooks are disabled, so no public webhook server is needed.
 
 Registration, installation and activation are separate steps. GitHub account authorization is required to register/install the app. Installing it does not automatically activate the workflow.
 
@@ -42,14 +42,17 @@ python3 scripts/configure_github_app.py \
 
 After setting `TYPESAFE_API_KEY` in your environment, repeat with `--configure-actions` to upload the app key and Jev key into the controller's Actions secrets. Secret values go over stdin to `gh`, never command-line arguments. Setup leaves `JEV_ENABLED=false` and `JEV_EXECUTE=false` even when called again, so subsequent scheduled jobs remain disabled while configuration is staged. For an existing deployment, wait for or cancel active runs before reconfiguration; changing variables does not revoke an already issued token.
 
-Review and commit the generated config on the trusted default branch before enabling the workflow. Then set `JEV_ENABLED=true`, leave `JEV_EXECUTE=false`, and dispatch `jev-review.yml`. ```sh
+Review and commit the generated config on the trusted default branch before enabling the workflow. Then set `JEV_ENABLED=true`, set `JEV_COMMENTS=false` and leave `JEV_EXECUTE=false`, then dispatch `jev-review.yml`.
+
+```sh
+gh variable set JEV_COMMENTS --repo thiago-ss/jev-review --body false
 gh variable set JEV_ENABLED --repo thiago-ss/jev-review --body true
 gh workflow run jev-review.yml --repo thiago-ss/jev-review --ref main
 ```
 
 Inspect the JSON output in Actions. No PR mutations happen in this mode.
 
-Once installation-token execution is verified, explicit live mode can publish structured human escalations. Auto-approval additionally requires representative held-out calibration and every policy gate. App installation does not waive the [production DoD](acceptance.md).
+Once enabled, the workflow defaults to evidence comments when `JEV_COMMENTS` is unset or true. Set it to true after a read-only trial to publish risk/checklist/CI tables, confidence bars, exact commit evidence and an Actions run link. This `--comment-only` path never approves or requests reviewers. Explicit `JEV_EXECUTE=true` enables policy-gated approvals and trusted reviewer requests. Auto-approval additionally requires representative held-out calibration and every policy gate. App installation does not waive the [production DoD](acceptance.md).
 
 ## Security and recovery
 

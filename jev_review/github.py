@@ -265,7 +265,7 @@ class GitHubClient:
             if not snapshot.required_checks:
                 raise GitHubError("approval requires trusted required checks")
         marker = "jev-review:" + policy_version + ":" + snapshot.pull_request.repository + ":" + str(snapshot.pull_request.number) + ":" + snapshot.pull_request.head_sha + ":" + event
-        body = marker + "\n\n" + (summary.strip() or "Structured Jev review; see policy decision and trusted checks.")
+        body = "<!-- " + marker + " -->\n\n" + (summary.strip() or "Structured Jev review; see policy decision and trusted checks.")
         return ReviewPlan(snapshot.pull_request.repository, snapshot.pull_request.number, snapshot.pull_request.base_sha, snapshot.pull_request.head_sha, event, body, marker, tuple(reviewers), tuple(team_reviewers), snapshot.required_checks, snapshot.trusted_check_app_ids, snapshot.freshness_seconds, tuple(trusted), allowlisted, approval_context)
 
     def execute(self, plan: ReviewPlan, dry_run: bool = True) -> ExecutionResult:

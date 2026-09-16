@@ -41,6 +41,13 @@ class GitHubAppWorkflowTests(unittest.TestCase):
         self.assertEqual(len(re.findall(expected, WORKFLOW)), 2)
         self.assertEqual(WORKFLOW.count("Validate scoped App target"), 2)
 
+    def test_comments_default_on_with_separate_approval_toggle(self):
+        self.assertIn("vars.JEV_COMMENTS != 'false'", WORKFLOW)
+        self.assertIn("vars.JEV_COMMENTS == 'false'", WORKFLOW)
+        self.assertIn('--comment-only', WORKFLOW)
+        self.assertIn('if [ "$JEV_EXECUTE" = "true" ]; then', WORKFLOW)
+        self.assertIn('JEV_EXECUTE: ${{ vars.JEV_EXECUTE }}', WORKFLOW)
+
     def test_pilot_validation_workflow_has_secret_free_trusted_checks(self):
         self.assertIn("pull_request:", VALIDATE_WORKFLOW)
         self.assertIn("branches: [main]", VALIDATE_WORKFLOW)

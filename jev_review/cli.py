@@ -145,12 +145,6 @@ def _route_breakdown(review: Any, owners: Sequence[str]) -> Mapping[str, Any]:
     return {"owners": list(owners), "urgency": "high" if risk in ("high", "critical") else "normal", "risk": risk, "findings": findings}
 
 
-def _summary_json(value: Mapping[str, Any]) -> str:
-    """Keep untrusted metadata inside one escaped JSON code block."""
-    body = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).replace("```", "\\u0060\\u0060\\u0060")
-    return "```json\n" + body + "\n```"
-
-
 def _audit_envelope(pr: Any, review: Any, decision: PolicyDecision, config: PolicyConfig, *, execute: bool, policy_version: str = "v1", calibration_ref: str = "not-verified", provider_result: Any = None, route: Sequence[str] = ()) -> Mapping[str, Any]:
     model_id = getattr(provider_result, "model", "") or getattr(config, "calibration_model_id", "") or "not-verified"
     prompt_version = getattr(config, "calibration_prompt_version", "") or "not-verified"
@@ -182,8 +176,11 @@ def _plan_value(plan: Any) -> Any:
     return dict(value) if isinstance(value, Mapping) else value
 
 
-def _build_plan(client: Any, snapshot: Any, decision: PolicyDecision, *, reviewers: Sequence[str], team_reviewers: Sequence[str], trusted_reviewers: Sequence[str], policy_version: str, summary: str, config: PolicyConfig, review: Any = None, calibration: Any = None) -> Any:
+def _build_plan(client: Any, snapshot: Any, decision: PolicyDecision, *, reviewers: Sequence[str], team_reviewers: Sequence[str], trusted_reviewers: Sequence[str], policy_version: str, summary: str, config: PolicyConfig, review: Any = None, calibration: Any = None, comment_only: bool = False) -> Any:
     from .github import ApprovalContext
+    if comment_only:
+        decision = PolicyDecision(Action.ESCALATE, decision.reasons)
+        reviewers, team_reviewers = (), ()
     kwargs: dict[str, Any] = {"allowlisted_repositories": tuple(config.allowlisted_repositories)}
     if decision.action is Action.AUTO_APPROVE:
         kwargs["approval_context"] = ApprovalContext(review=review, policy=config, calibration=calibration)
@@ -289,10 +286,15 @@ def _split_github_routes(owners: Sequence[str]) -> tuple[tuple[str, ...], tuple[
     return tuple(dict.fromkeys(users)), tuple(dict.fromkeys(teams))
 
 
-def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapping[str, Any]) -> Mapping[str, Any]:
+def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapping[str, Any], comment_only: bool = False) -> Mapping[str, Any]:
     from .github import ExecutionResult, GitHubClient
     from .provider import JevProvider, JevProviderError, PROMPT_VERSION, SCHEMA_VERSION
 
+    from .presentation import render_review
+
+    if execute and comment_only:
+        raise ValueError("execute and comment-only modes are mutually exclusive")
+    write = execute or comment_only
     trusted = config_raw.get("trusted_checks", config_raw.get("required_checks", {}))
     if not isinstance(trusted, Mapping):
         raise ValueError("trusted_checks must map check names to app IDs")
@@ -335,12 +337,12 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
         review, provider_result = provider.review_with_result(snapshot.pull_request)
     except JevProviderError as exc:
         decision = PolicyDecision(Action.ESCALATE, ("Jev provider unavailable: " + str(exc),))
-        plan = _build_plan(client, snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=_summary_json({"action": "escalate", "reasons": list(decision.reasons), "route": _route_breakdown(None, route)}), config=config, calibration=calibration)
+        plan = _build_plan(client, snapshot, decision, reviewers=route_users, team_reviewers=route_teams, trusted_reviewers=trusted_for_github, policy_version=str(config_raw.get("policy_version", "v1")), summary=render_review(snapshot.pull_request, None, decision, config, route=route), config=config, calibration=calibration, comment_only=comment_only)
         if repository not in frozenset(config_raw.get("allowlisted_repositories", ())):
-            execution = ExecutionResult(not execute, True, ("repository is not allowlisted; no external write",))
+            execution = ExecutionResult(not write, True, ("repository is not allowlisted; no external write",))
         else:
-            execution = client.execute(plan, dry_run=not execute)
-        return {"repository": repository, "pull_request": number, "decision": _json_value(decision), "route": list(route), "plan": _plan_value(plan), "execution": _json_value(execution), "provider_error": str(exc), "dry_run": not execute, "audit": _audit_envelope(snapshot.pull_request, None, decision, config, execute=execute, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), route=route)}
+            execution = client.execute(plan, dry_run=not write)
+        return {"repository": repository, "pull_request": number, "decision": _json_value(decision), "route": list(route), "plan": _plan_value(plan), "execution": _json_value(execution), "provider_error": str(exc), "dry_run": not write, "audit": _audit_envelope(snapshot.pull_request, None, decision, config, execute=write, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), route=route)}
     if provider_result is None:
         raise RuntimeError("Jev provider returned no result")
     # Compare calibration identity to Jev's returned model, never a request
@@ -352,13 +354,12 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
     reviewers = tuple(dict.fromkeys(configured_users + route_users))
     team_reviewers = tuple(dict.fromkeys(configured_teams + route_teams))
     trusted_reviewers = trusted_for_github
-    summary_data = {"action": decision.action.value, "reasons": list(decision.reasons), "risk": review.risk.value, "approve_confidence": review.approve_confidence, "risk_confidence": review.risk_confidence, "checklist": [_json_value(item) for item in review.required_checklist_items], "paths": list(snapshot.pull_request.changed_paths), "route": _route_breakdown(review, route)}
-    summary = _summary_json(summary_data)
-    plan = _build_plan(client, snapshot, decision, reviewers=reviewers, team_reviewers=team_reviewers, trusted_reviewers=trusted_reviewers, policy_version=str(config_raw.get("policy_version", "v1")), summary=summary, config=config, review=review, calibration=calibration)
-    if execute and repository not in config.allowlisted_repositories:
+    summary = render_review(snapshot.pull_request, review, decision, config, provider_result=provider_result, route=route, calibration_ref=_calibration_reference(config_raw.get("calibration")))
+    plan = _build_plan(client, snapshot, decision, reviewers=reviewers, team_reviewers=team_reviewers, trusted_reviewers=trusted_reviewers, policy_version=str(config_raw.get("policy_version", "v1")), summary=summary, config=config, review=review, calibration=calibration, comment_only=comment_only)
+    if write and repository not in config.allowlisted_repositories:
         execution = ExecutionResult(False, True, ("repository is not allowlisted; no external write",))
     else:
-        execution = client.execute(plan, dry_run=not execute)
+        execution = client.execute(plan, dry_run=not write)
     return {
         "repository": repository,
         "pull_request": number,
@@ -369,7 +370,7 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
         "route": list(route),
         "plan": _plan_value(plan),
         "execution": _json_value(execution),
-        "audit": _audit_envelope(snapshot.pull_request, review, decision, config, execute=execute, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), provider_result=provider_result, route=route),
+        "audit": _audit_envelope(snapshot.pull_request, review, decision, config, execute=write, policy_version=str(config_raw.get("policy_version", "v1")), calibration_ref=_calibration_reference(config_raw.get("calibration")), provider_result=provider_result, route=route),
     }
 
 
@@ -383,7 +384,7 @@ def _github_command(args: argparse.Namespace) -> Mapping[str, Any]:
         if args.calibration:
             config["calibration"] = args.calibration
     if args.command == "github":
-        return _github_one(args.repo, args.pr, execute=args.execute, config_raw=config)
+        return _github_one(args.repo, args.pr, execute=args.execute, config_raw=config, comment_only=args.comment_only)
     from .github import GitHubClient
 
     client = GitHubClient()
@@ -402,10 +403,10 @@ def _github_command(args: argparse.Namespace) -> Mapping[str, Any]:
         number = pull.get("number") if isinstance(pull, Mapping) else None
         if isinstance(number, int):
             try:
-                results.append(_github_one(args.repo, number, execute=args.execute, config_raw=config))
+                results.append(_github_one(args.repo, number, execute=args.execute, config_raw=config, comment_only=args.comment_only))
             except (RuntimeError, ValueError) as exc:
-                results.append({"pull_request": number, "action": "escalate", "error": str(exc), "dry_run": not args.execute})
-    return {"repository": args.repo, "count": len(results), "results": results, "dry_run": not args.execute}
+                results.append({"pull_request": number, "action": "escalate", "error": str(exc), "dry_run": not (args.execute or args.comment_only)})
+    return {"repository": args.repo, "count": len(results), "results": results, "dry_run": not (args.execute or args.comment_only)}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -424,6 +425,7 @@ def build_parser() -> argparse.ArgumentParser:
     gh.add_argument("--calibration", help="calibration JSON path (overrides config value)")
     gh.add_argument("--model", help="request model alias")
     gh_mode = gh.add_mutually_exclusive_group()
+    gh_mode.add_argument("--comment-only", action="store_true", help="post evidence comments without approvals or reviewer requests")
     gh_mode.add_argument("--execute", action="store_true", help="permit approval/reviewer-request writes after all gates")
     gh_mode.add_argument("--dry-run", action="store_true", help="explicitly select default dry-run mode")
     poll = sub.add_parser("poll", help="poll configured GitHub pull requests")
@@ -432,6 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     poll.add_argument("--calibration", help="calibration JSON path (overrides config value)")
     poll.add_argument("--model", help="request model alias")
     poll_mode = poll.add_mutually_exclusive_group()
+    poll_mode.add_argument("--comment-only", action="store_true", help="post evidence comments without approvals or reviewer requests")
     poll_mode.add_argument("--execute", action="store_true", help="permit approval/reviewer-request writes after all gates")
     poll_mode.add_argument("--dry-run", action="store_true", help="explicitly select default dry-run mode")
     cal = sub.add_parser("calibrate", help="evaluate held-out calibration records")

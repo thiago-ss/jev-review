@@ -1,6 +1,6 @@
 # Deployment runbook
 
-Status: **deployed in shadow mode** on `thiago-ss/jev-review` as `jev-review-thiago-ss`. Scheduled polling is enabled; `JEV_EXECUTE=false`. No live bot approval, comment or reviewer request has been performed.
+Status: **deployed in comment-only mode** on `thiago-ss/jev-review` as `jev-review-thiago-ss`. Scheduled polling is enabled; `JEV_EXECUTE=false`. Evidence comments are enabled by default; automatic approval and reviewer-request writes remain disabled.
 
 ## Required configuration
 
@@ -8,7 +8,7 @@ Choose one target `OWNER/REPO`; configure the same exact identity in the allowli
 
 Use `TYPESAFE_API_KEY` and a scoped `GITHUB_TOKEN` or GitHub App installation token. Keep both server-side, in repository/environment secrets. Reading requires access to contents, pull requests and checks; posting reviews/reviewer requests additionally requires pull-request write permission. Review exact permissions against the GitHub API and selected token type.
 
-The included workflow uses a real GitHub App installation token. Follow the [App registration and setup guide](github-app.md). The controller's default `GITHUB_TOKEN` only checks out trusted bot code; a separately minted App token accesses the configured target. The workflow is disabled unless `JEV_ENABLED=true`; `JEV_EXECUTE=true` selects pull-request write permissions. Tokens are restricted to the configured installation owner/repository, which must match `JEV_REPOSITORY`.
+The included workflow uses a real GitHub App installation token. Follow the [App registration and setup guide](github-app.md). The controller's default `GITHUB_TOKEN` only checks out trusted bot code; a separately minted App token accesses the configured target. The workflow is disabled unless `JEV_ENABLED=true`; `JEV_COMMENTS` defaults to true, selecting `--comment-only` with pull-request write permissions. Set it false for read-only dry runs. `JEV_EXECUTE=true` separately selects full policy-gated execution. Tokens are restricted to the configured installation owner/repository, which must match `JEV_REPOSITORY`.
 
 App registration requests contents read, checks read and pull requests write. Each dry-run token is narrowed to reads. Store the App private key and Jev key as Actions secrets; store the App client ID and installation target as variables. Set `bot_login` from the actual App slug, not an invented bot username. GitHub App approvals do not automatically replace required human CODEOWNER reviews.
 
@@ -23,7 +23,7 @@ App registration requests contents read, checks read and pull requests write. Ea
 
 ## Operation and recovery
 
-- Disable writes by removing `--execute` or revoking pull-request write permission. Stop scheduling to stop provider requests as well.
+- Disable all writes by setting both `JEV_COMMENTS=false` and `JEV_EXECUTE=false`, or revoking pull-request write permission. Stop scheduling to stop provider requests as well.
 - GitHub request outcomes can be uncertain after a transport failure. Reconcile server-side review markers before retrying; do not blindly replay POSTs.
 - Preserve JSON audit records with access controls appropriate for source code. Set retention according to the target repository's policy; public examples contain synthetic data only.
 - A changed concrete Jev model, question set, schema, policy or repository invalidates prior evidence. Return to shadow operation until re-evaluated.

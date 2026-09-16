@@ -31,3 +31,9 @@
 - Corrected App manifest after real GitHub validation rejected its inactive localhost webhook. Omitted webhook configuration; verified GitHub now renders the creation form. Local callback remains loopback-only.
 
 - App installed and configured for `thiago-ss/jev-review`. Real scoped-token shadow review succeeded on pilot PR #1; exact structured output archived in [pilot evidence](../evidence/github-app-pilot.json). Trusted CI passed; confidence/calibration prevented approval. Pilot closed unmerged; hourly read-only polling remains enabled.
+
+## Evidence comments by default
+
+- User authorized default PR comments with visual review evidence and an Actions run link.
+- Added a separate comment-only publication mode: model evaluation remains in shadow, while comments may be posted to allowlisted unchanged PRs. Approval and reviewer-request writes still require explicit full execution.
+- Native GitHub Markdown presents risk, confidence and checklist/CI evidence; raw evidence stays collapsible. Scheduler comments default on after scheduling is enabled; `JEV_COMMENTS=false` opts out.

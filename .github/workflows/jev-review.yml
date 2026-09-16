@@ -21,7 +21,7 @@ env:
 
 jobs:
   dry-run:
-    if: vars.JEV_ENABLED == 'true' && vars.JEV_EXECUTE != 'true'
+    if: vars.JEV_ENABLED == 'true' && vars.JEV_EXECUTE != 'true' && vars.JEV_COMMENTS == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -63,7 +63,7 @@ jobs:
           python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --dry-run
 
   live:
-    if: vars.JEV_ENABLED == 'true' && vars.JEV_EXECUTE == 'true'
+    if: vars.JEV_ENABLED == 'true' && (vars.JEV_EXECUTE == 'true' || vars.JEV_COMMENTS != 'false')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -98,10 +98,15 @@ jobs:
           permission-contents: read
           permission-checks: read
           permission-pull-requests: write
-      - name: Poll pull requests (live, explicitly enabled)
+      - name: Publish review evidence
         env:
+          JEV_EXECUTE: ${{ vars.JEV_EXECUTE }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           test -f "$JEV_CONFIG"
-          python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --execute
+          if [ "$JEV_EXECUTE" = "true" ]; then
+            python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --execute
+          else
+            python -m jev_review poll --repo "$JEV_REPOSITORY" --config "$JEV_CONFIG" --comment-only
+          fi

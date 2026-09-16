@@ -2,7 +2,7 @@
 
 A small autonomous PR review bot built around TypeSafe's Jev. It consumes structured PR metadata and patches, asks finite typed questions, then applies deterministic approval gates. Uncertain or risky reviews route to trusted owners with a structured explanation. Suggestions are advisory; the bot never edits or merges code.
 
-**Status:** GitHub App installed on `thiago-ss/jev-review`; scheduled shadow reviews enabled; approval writes disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
+**Status:** GitHub App installed on `thiago-ss/jev-review`; scheduled evidence comments enabled; approval writes disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
 
 ## Run locally
 
@@ -23,11 +23,11 @@ python3 -m venv .venv
 
 The calibration example is intentionally synthetic and reports `ready: false`; production readiness requires the held-out evidence described below.
 
-Dry-run is the default. `review --execute` only simulates active policy evaluation locally; it never calls GitHub. Only the `github` and `poll` commands can write externally, and only with explicit `--execute`.
+Dry-run is the default. `review --execute` only simulates active policy evaluation locally; it never calls GitHub. Only `github` and `poll` can write externally: `--comment-only` posts evidence comments; `--execute` additionally permits gated approvals and reviewer requests. CLI defaults remain dry-run.
 
 ## Installable GitHub App
 
-Use the [GitHub App setup guide](docs/github-app.md) to register predefined permissions, install on selected repositories and run with short-lived scoped tokens. The trusted controller workflow defaults to disabled/read-only operation.
+Use the [GitHub App setup guide](docs/github-app.md) to register predefined permissions, install on selected repositories and run with short-lived scoped tokens. The scheduler remains disabled until configured. Once enabled, it posts evidence comments by default (`JEV_COMMENTS=false` opts out); `JEV_EXECUTE=true` separately enables gated approvals and reviewer requests.
 
 ## GitHub integration
 
