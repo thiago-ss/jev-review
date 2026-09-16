@@ -37,3 +37,5 @@
 - User authorized default PR comments with visual review evidence and an Actions run link.
 - Added a separate comment-only publication mode: model evaluation remains in shadow, while comments may be posted to allowlisted unchanged PRs. Approval and reviewer-request writes still require explicit full execution.
 - Native GitHub Markdown presents risk, confidence and checklist/CI evidence; raw evidence stays collapsible. Scheduler comments default on after scheduling is enabled; `JEV_COMMENTS=false` opts out.
+
+- Validated default comments with a real App-authored review on PR #2. See [publication evidence](../evidence/pr-comments.md), including live-discovered JSON rendering correction and passing CI.
