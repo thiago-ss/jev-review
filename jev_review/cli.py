@@ -354,7 +354,11 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
     reviewers = tuple(dict.fromkeys(configured_users + route_users))
     team_reviewers = tuple(dict.fromkeys(configured_teams + route_teams))
     trusted_reviewers = trusted_for_github
-    summary = render_review(snapshot.pull_request, review, decision, config, provider_result=provider_result, route=route, calibration_ref=_calibration_reference(config_raw.get("calibration")), check_evidence=getattr(snapshot, "check_evidence", ()))
+    investigation = None
+    if comment_only and config_raw.get("xray_enabled") is True:
+        from .investigation import investigate
+        investigation = investigate(snapshot.pull_request, provider)
+    summary = render_review(snapshot.pull_request, review, decision, config, provider_result=provider_result, route=route, calibration_ref=_calibration_reference(config_raw.get("calibration")), check_evidence=getattr(snapshot, "check_evidence", ()), investigation=investigation)
     plan = _build_plan(client, snapshot, decision, reviewers=reviewers, team_reviewers=team_reviewers, trusted_reviewers=trusted_reviewers, policy_version=str(config_raw.get("policy_version", "v1")), summary=summary, config=config, review=review, calibration=calibration, comment_only=comment_only)
     if write and repository not in config.allowlisted_repositories:
         execution = ExecutionResult(False, True, ("repository is not allowlisted; no external write",))
@@ -365,6 +369,7 @@ def _github_one(repository: str, number: int, *, execute: bool, config_raw: Mapp
         "pull_request": number,
         "decision": _json_value(decision),
         "review": _json_value(review),
+        "investigation": investigation,
         "provider_model": provider_result.model,
         "provider_request_id": provider_result.request_id,
         "route": list(route),

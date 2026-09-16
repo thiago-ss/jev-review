@@ -43,3 +43,9 @@
 ## Monochrome review receipts and test evidence
 
 User requested emoji-free visual reviews and more evidence. Use compact ASCII disposition blocks and confidence meters, native Markdown tables, and expandable scope/raw data. Separate model assessment of test adequacy from executed CI. Carry required check metadata from the same snapshot used for trust gating; link exact jobs, preserving unknown states. CI logs individual test names and writes measured module counts to the job summary. No inferred coverage or invented test counts. See [test evidence guide](../test-evidence.md).
+
+## Review X-ray and adversarial atlas
+
+User rejected cosmetic receipts and confirmed both deeper intelligence and bold visual reports. Added three correlated typed perspectives (`xray-v1`), file-level hypotheses and proposed checks; no prose findings or execution claims are invented. Experimental labels remain outside provider input. A ten-call synthetic contrast lab records bug/repair and metadata-injection cases with complete request provenance. The visual atlas is generated from observations, exposes every diff and probability, and keeps threshold simulation separate from deployed policy.
+
+Visual artifacts are static, credential-free HTML/PNG. Runtime comments use native Mermaid and Markdown, retaining exact CI links and raw evidence. No approval gate is relaxed. See [scope and DoD](../../.scratch/jev-xray/spec.md) and [report usage](../reports/README.md).

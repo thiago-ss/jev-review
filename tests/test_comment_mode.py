@@ -11,11 +11,11 @@ from test_github import FakeGitHub
 
 
 class CommentModeTests(unittest.TestCase):
-    def run_case(self, action=Action.ESCALATE, *, comment=True, allowed=True, outage=False):
+    def run_case(self, action=Action.ESCALATE, *, comment=True, allowed=True, outage=False, xray=False):
         transport = FakeGitHub()
         client = GitHubClient('test', api_url='https://example.test', transport=transport, bot_login='jev-bot')
         review = Review(True, RiskLevel.LOW, tuple(ChecklistItem(n, ChecklistStatus.PASS, .99) for n in ('correctness', 'security', 'tests')), .99, .99)
-        config = {'allowlisted_repositories': ['o/r'] if allowed else [], 'trusted_checks': {'ci': [7]}, 'trusted_reviewers': ['alice'], 'fallback_reviewers': ['alice']}
+        config = {'xray_enabled': xray, 'allowlisted_repositories': ['o/r'] if allowed else [], 'trusted_checks': {'ci': [7]}, 'trusted_reviewers': ['alice'], 'fallback_reviewers': ['alice']}
         with patch('jev_review.github.GitHubClient', return_value=client), patch('jev_review.provider.JevProvider') as provider, patch('jev_review.cli.evaluate', return_value=PolicyDecision(action, ())) as evaluate:
             if outage:
                 provider.return_value.review_with_result.side_effect = JevProviderError('unavailable')
@@ -48,6 +48,15 @@ class CommentModeTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][2]['event'], 'COMMENT')
         self.assertIn('provider_error', result)
+
+    def test_investigation_is_opt_in_and_comment_only(self):
+        with patch('jev_review.investigation.investigate', return_value={'perspectives': {}, 'scope_complete': True}) as investigate:
+            result, writes = self.run_case(xray=True)
+            self.assertEqual(investigate.call_count, 1)
+            self.assertIn('investigation', result)
+            self.assertEqual(writes[0][2]['event'], 'COMMENT')
+            self.run_case(xray=True, comment=False)
+            self.assertEqual(investigate.call_count, 1)
 
     def test_modes_are_explicit_and_mutually_exclusive(self):
         parser = build_parser()

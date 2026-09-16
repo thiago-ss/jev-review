@@ -41,6 +41,7 @@ def render_review(
     route: Sequence[str] = (),
     calibration_ref: Any = "not-verified",
     check_evidence: Sequence[Mapping[str, Any]] = (),
+    investigation: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """Render a GitHub-safe, visual review comment.
 
@@ -57,7 +58,9 @@ def render_review(
     server = _safe_server_url(os.environ.get("GITHUB_SERVER_URL", "https://github.com"))
 
     sections = []
-    sections.append(_header(action, parsed_review, provider_error))
+    sections.append("## Jev / Review X-ray" if investigation is not None else _header(action, parsed_review, provider_error))
+    if investigation is not None:
+        sections.append(_investigation(investigation))
     sections.append(_mode_note(config))
     links = _links(parsed_pr, server)
     if links:
@@ -417,3 +420,50 @@ def _json_value(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
         return _json_value(asdict(cast(Any, value)))
     return "<unsupported>"
+
+
+def _investigation(report: Mapping[str, Any]) -> str:
+    """Display correlated views without turning their agreement into authority."""
+    perspectives = report.get('perspectives', {})
+    if not isinstance(perspectives, Mapping):
+        return '**Investigation unavailable.**'
+    labels = ('correctness', 'security', 'verification')
+    diagram = ['```mermaid', 'flowchart LR', '  D["PR diff + metadata"]']
+    rows = []
+    for index, label in enumerate(labels):
+        item = perspectives.get(label, {})
+        answers = item.get('answers', {}) if isinstance(item, Mapping) else {}
+        verdict = answers.get('verdict', {})
+        choice = verdict.get('choice', 'unavailable')
+        choice = choice if choice in ('approve', 'hold', 'review') else 'unavailable'
+        diagram.append('  D --> V' + str(index) + '["' + label.title() + ': ' + choice.upper() + '"]')
+        diagram.append('  V' + str(index) + ' --> P["Deterministic policy / approval gates"]')
+        probs = verdict.get('probabilities', {})
+        distribution_text = ' / '.join(str(round(probs[k] * 100)) + '%' if isinstance(probs.get(k), (int, float)) else '?' for k in ('approve', 'hold', 'review'))
+        rows.append('| ' + label.title() + ' | ' + choice + ' | ' + distribution_text + ' |')
+    diagram.extend(['  classDef evidence fill:#eef3fc,stroke:#2854a1,color:#17231f', '  classDef policy fill:#f5ede7,stroke:#a54527,color:#17231f', '  class V0,V1,V2 evidence', '  class P policy', '```'])
+    lines = ['Three prompts interrogate the same change. These are correlated views from one model, not independent reviewers.', '', *diagram, '', '| Perspective | Verdict | P(approve / hold / review) |', '| --- | --- | --- |', *rows]
+    scope = report.get('scope', {})
+    paths = scope.get('files_reviewed', ()) if isinstance(scope, Mapping) else ()
+    if paths:
+        lines.extend(('', '### File-level hypotheses', '', 'Model-selected categories, not proven defects. Percentages are selected-category probabilities.', '', '| Changed file | Correctness view | Security view | Verification view |', '| --- | --- | --- | --- |'))
+        for path in paths[:8]:
+            values = []
+            for label in labels:
+                item = perspectives.get(label, {})
+                answer = item.get('files', {}).get(path, {}).get('failure', {})
+                probability = answer.get('selected_probability')
+                pct = ' / ' + str(round(probability * 100)) + '%' if isinstance(probability, (int, float)) else ''
+                values.append(_safe_text(answer.get('choice', 'unavailable')) + pct)
+            lines.append('| ' + _safe_text(path) + ' | ' + ' | '.join(values) + ' |')
+    if report.get('scope_complete') is not True:
+        lines.extend(('', '**Scope incomplete.** Bounded investigation cannot cover this PR; no complete-review claim.'))
+    recommendations = report.get('recommended_checks', ())
+    if recommendations:
+        lines.extend(('', '<details>', '<summary>Proposed next checks / not executed</summary>', '', '```json', _json_for_markdown(recommendations, 2000), '```', '', '</details>'))
+    lines.extend(('', '<details>', '<summary>Investigation provenance / model, request IDs, failures</summary>', '', '| Perspective | Model | Request | Status |', '| --- | --- | --- | --- |'))
+    for label in labels:
+        item = perspectives.get(label, {})
+        lines.append('| ' + label + ' | ' + _safe_text(item.get('model')) + ' | ' + _safe_text(item.get('request_id')) + ' | ' + _safe_text(item.get('status')) + ' |')
+    lines.extend(('', 'Full question/response evidence is in the linked Actions run. Agreement does not establish calibration.', '', '</details>'))
+    return '\n'.join(lines)

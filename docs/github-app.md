@@ -59,3 +59,9 @@ Once enabled, the workflow defaults to evidence comments when `JEV_COMMENTS` is 
 Protect the controller's code, workflow, config and secrets: its App private key can authorize the app's installations. Scope tokens to one target and keep job duration below the token lifetime. Never execute a target PR checkout with these credentials. Disable `JEV_ENABLED` to stop runs; revoke the installation or rotate the app key if compromised. Protect target branches against stale approvals.
 
 See [GitHub's manifest documentation](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest), the [official token Action](https://github.com/actions/create-github-app-token), and [local verification evidence](evidence/github-app.md).
+
+## Review X-ray
+
+Set `xray_enabled: true` in trusted configuration to add three bounded perspectives to comment-only reviews. The installed pilot enables it. Correctness, security and verification prompts return typed verdicts, per-file failure categories and proposed next checks. The same model supplies all views; agreement is not independent corroboration. Each perspective's full distribution, prompt version, request ID and failure state appear in Actions output.
+
+The investigation covers at most eight files and 200,000 diff bytes. Unreviewed files, provider failures and incomplete scope stay explicit. Proposed checks are not executed. X-ray is advisory, never enables approval, and is not invoked by dry-run or full-execution mode. The existing policy remains the approval authority.
