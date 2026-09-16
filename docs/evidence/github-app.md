@@ -27,3 +27,7 @@ The existing authenticated Jev evaluation remains documented in [live observatio
 ## Observed GitHub CI
 
 [Validation run 35116487259](https://github.com/thiago-ss/jev-review/actions/runs/35116487259) completed successfully for implementation commit `17960da55393cd27b542bcbf4380b36575897b5e`. Both `test (3.9)` and `test (3.12)` completed successfully; GitHub API reported App ID `15368` for both. The 3.12 job also passed mypy. GitHub emitted non-fatal Node 20 deprecation annotations for existing pinned checkout/setup-python actions, which ran under Node 24. This validates CI execution, not App installation authentication.
+
+## Registration correction
+
+GitHub rejected the initial manifest because its inactive webhook still used a loopback URL. Removed the optional webhook configuration entirely for this polling-only app; localhost remains only the browser callback. GitHub subsequently displayed the Create GitHub App form without validation errors. All 65 local tests and registration-helper mypy checks pass. Webhook secrets are optional in the conversion response because the runtime does not use webhooks.

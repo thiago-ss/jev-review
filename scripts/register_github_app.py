@@ -66,12 +66,8 @@ def build_manifest(*, port: int, name: str = DEFAULT_APP_NAME) -> Dict[str, Any]
         "url": "https://github.com/thiago-ss/jev-review",
         "description": "Fail-closed autonomous Jev pull-request review bot",
         "public": False,
-        # GitHub requires hook_attributes.url in a manifest.  The hook is
-        # deliberately inactive because this deployment polls pull requests.
-        "hook_attributes": {
-            "url": "http://127.0.0.1:{}/github/events".format(port),
-            "active": False,
-        },
+        # API-only polling app: omit optional webhook configuration entirely.
+        # GitHub rejects loopback webhook URLs even when active is false.
         "redirect_url": "http://127.0.0.1:{}/callback".format(port),
         "default_events": [],
         "default_permissions": {
@@ -135,7 +131,6 @@ def _credential_record(payload: Mapping[str, Any]) -> Tuple[Dict[str, Any], str]
     pem = _required_string(payload.get("pem"), "private key")
     if not pem.startswith("-----BEGIN ") or "PRIVATE KEY" not in pem.split("\n", 1)[0] or not pem.rstrip().endswith("-----"):
         raise RegistrationError("GitHub app conversion response has invalid private key")
-    webhook_secret = _required_string(payload.get("webhook_secret"), "webhook secret")
     # Keep only fields needed by the runtime.  Unknown response fields never
     # become durable credentials or get echoed to the terminal.
     record: Dict[str, Any] = {
@@ -145,9 +140,8 @@ def _credential_record(payload: Mapping[str, Any]) -> Tuple[Dict[str, Any], str]
         "app_url": "https://github.com/apps/{}".format(slug),
         "install_url": "https://github.com/apps/{}/installations/new".format(slug),
         "pem": pem,
-        "webhook_secret": webhook_secret,
     }
-    for key in ("client_id", "client_secret"):
+    for key in ("client_id", "client_secret", "webhook_secret"):
         value = payload.get(key)
         if value is not None:
             record[key] = _required_string(value, key)

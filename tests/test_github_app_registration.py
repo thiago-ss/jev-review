@@ -44,7 +44,7 @@ class GitHubAppRegistrationTests(unittest.TestCase):
         manifest = registration.build_manifest(port=4567)
         self.assertEqual(manifest["name"], "jev-review-thiago-ss")
         self.assertFalse(manifest["public"])
-        self.assertFalse(manifest["hook_attributes"]["active"])
+        self.assertNotIn("hook_attributes", manifest)
         self.assertEqual(manifest["default_events"], [])
         self.assertEqual(
             manifest["default_permissions"],
@@ -126,7 +126,7 @@ class GitHubAppRegistrationTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             form = html.unescape(response.read().decode("utf-8"))
             self.assertIn("https://github.com/settings/apps/new", form)
-            self.assertIn('"active":false', form)
+            self.assertNotIn('"hook_attributes"', form)
             self.assertNotIn("WEBHOOK-SECRET", form)
 
             connection.request("GET", "/callback?code=temporary-code&state=wrong-state")

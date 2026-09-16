@@ -27,3 +27,5 @@
 - Registration, installation and workflow activation are separate observable states; no account authorization or completed live run is inferred from local tests.
 
 - Local App implementation validation: 65 tests on Python 3.9/3.12, all 11 typed source files pass; [evidence](../evidence/github-app.md). Browser registration form rendered. GitHub sign-in/installation remain owner actions.
+
+- Corrected App manifest after real GitHub validation rejected its inactive localhost webhook. Omitted webhook configuration; verified GitHub now renders the creation form. Local callback remains loopback-only.
