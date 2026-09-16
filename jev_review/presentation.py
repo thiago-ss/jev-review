@@ -369,7 +369,7 @@ def _json_for_markdown(value: Any, budget: int) -> str:
         encoded = json.dumps({"status": "evidence-serialization-failed"}, separators=(",", ":"))
     # Escape syntax even inside a fenced block. This protects future renderers
     # and makes @handles / HTML tags inert if a fence is ever moved.
-    for source, escaped in (("`", "\\u0060"), ("<", "\\u003c"), (">", "\\u003e"), ("@", "\\u0040"), ("&", "\\u0026"), ("[", "\\u005b"), ("]", "\\u005d"), ("(", "\\u0028"), (")", "\\u0029")):
+    for source, escaped in (("`", "\\u0060"), ("<", "\\u003c"), (">", "\\u003e"), ("@", "\\u0040"), ("&", "\\u0026")):
         encoded = encoded.replace(source, escaped)
     if len(encoded) <= budget:
         return encoded

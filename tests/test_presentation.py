@@ -70,7 +70,10 @@ class PresentationTests(TestCase):
         with mock.patch.dict(os.environ, {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "other/repo", "GITHUB_RUN_ID": "not-a-run"}, clear=False):
             body = render_review(make_pr("src/[bad].py"), review, PolicyDecision(Action.ESCALATE, ("reason ](https://evil.example)",)), PolicyConfig(), None, ("@evil",))
 
-        self.assertNotIn("](https://evil.example)", body)
+        self.assertNotIn("](https://evil.example)", body.split("```json")[0])
+        import json
+        raw = json.loads(body.split("```json\n", 1)[1].split("\n```", 1)[0])
+        self.assertEqual(raw["review"]["concerns"][0]["message"], concern.message)
         self.assertNotIn("<script>", body)
         self.assertNotIn("@everyone", body)
         self.assertNotIn("@evil", body)
@@ -96,7 +99,7 @@ class PresentationTests(TestCase):
         self.assertIn("&#64;secret", body)
         self.assertIn("&lt;bad&gt;", body)
 
-    def test_verified_prefix_is_only_way_to_claim_calibration(self):
+    def test_calibration_requires_passed_policy_and_reference(self):
         body = render_review(make_pr(), make_review(), PolicyDecision(Action.ESCALATE, ()), PolicyConfig(), calibration_ref="calibration.json")
         self.assertIn("uncalibrated", body)
         self.assertIn("policy evidence is not verified", body)
