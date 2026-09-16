@@ -23,3 +23,7 @@ Luna high agents implemented registration, setup and workflow independently. The
 The GitHub browser session was signed out. No App registration, repository installation, installation-token API request, or live bot review is claimed from local tests. The localhost registration helper is the owner handoff; credentials will exist only after GitHub returns a successful callback. Setup then stages secrets and disabled variables, the trusted config must be pushed, and a real dry-run workflow must be observed.
 
 The existing authenticated Jev evaluation remains documented in [live observations](live-evaluation.md). This change does not alter the provider or approval policy and does not supply production calibration evidence. See the [App setup guide](../github-app.md).
+
+## Observed GitHub CI
+
+[Validation run 35116487259](https://github.com/thiago-ss/jev-review/actions/runs/35116487259) completed successfully for implementation commit `17960da55393cd27b542bcbf4380b36575897b5e`. Both `test (3.9)` and `test (3.12)` completed successfully; GitHub API reported App ID `15368` for both. The 3.12 job also passed mypy. GitHub emitted non-fatal Node 20 deprecation annotations for existing pinned checkout/setup-python actions, which ran under Node 24. This validates CI execution, not App installation authentication.

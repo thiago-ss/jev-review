@@ -36,7 +36,8 @@ Use the setup helper to prepare `config/production.json` from the actual registe
 ```sh
 python3 scripts/configure_github_app.py \
   --credentials .local/github-app/credentials.json \
-  --repo thiago-ss/jev-review --reviewer thiago-ss
+  --repo thiago-ss/jev-review --reviewer thiago-ss \
+  --check "test (3.9):15368" --check "test (3.12):15368"
 ```
 
 After setting `TYPESAFE_API_KEY` in your environment, repeat with `--configure-actions` to upload the app key and Jev key into the controller's Actions secrets. Secret values go over stdin to `gh`, never command-line arguments. Setup leaves `JEV_ENABLED=false` and `JEV_EXECUTE=false` even when called again, so subsequent scheduled jobs remain disabled while configuration is staged. For an existing deployment, wait for or cancel active runs before reconfiguration; changing variables does not revoke an already issued token.
