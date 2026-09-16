@@ -66,8 +66,11 @@ def render_review(
     if links:
         sections.append("**Trace:** " + " · ".join(links))
     sections.append("**Evidence status:** " + calibration_text)
-    sections.append(_decision_table(parsed_review, calibrated))
-    sections.append(_checklist_table(parsed_review, calibrated))
+    if investigation is not None:
+        sections.append("<details>\n<summary>Baseline decision and checklist</summary>\n\n" + _decision_table(parsed_review, calibrated) + "\n\n" + _checklist_table(parsed_review, calibrated) + "\n\n</details>")
+    else:
+        sections.append(_decision_table(parsed_review, calibrated))
+        sections.append(_checklist_table(parsed_review, calibrated))
     sections.append(_ci_table(parsed_pr, check_evidence))
     sections.append(_scope(parsed_pr))
     sections.append(_reasons_and_route(decision, parsed_review, route, provider_error))
@@ -437,7 +440,7 @@ def _investigation(report: Mapping[str, Any]) -> str:
         choice = verdict.get('choice', 'unavailable')
         choice = choice if choice in ('approve', 'hold', 'review') else 'unavailable'
         diagram.append('  D --> V' + str(index) + '["' + label.title() + ': ' + choice.upper() + '"]')
-        diagram.append('  V' + str(index) + ' --> P["Deterministic policy / approval gates"]')
+        diagram.append('  V' + str(index) + ' --> P["Human review / compare evidence"]')
         probs = verdict.get('probabilities', {})
         distribution_text = ' / '.join(str(round(probs[k] * 100)) + '%' if isinstance(probs.get(k), (int, float)) else '?' for k in ('approve', 'hold', 'review'))
         rows.append('| ' + label.title() + ' | ' + choice + ' | ' + distribution_text + ' |')

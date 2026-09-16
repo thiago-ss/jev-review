@@ -4,6 +4,12 @@ A small autonomous PR review bot built around TypeSafe's Jev. It consumes struct
 
 **Status:** GitHub App installed on `thiago-ss/jev-review`; scheduled evidence comments enabled; approval writes disabled. Production approval is gated on a named repository, trusted deployment configuration and representative held-out calibration evidence. The included synthetic examples do not satisfy that gate.
 
+## Review X-ray and experiment atlas
+
+The pilot adds three typed perspectives to comment-only reviews: correctness, security and verification. Reports preserve disagreements, per-file hypotheses, missing evidence and exact CI links. These are correlated prompts, not independent reviewers.
+
+Explore the self-contained [interactive atlas](docs/reports/jev-experiment.html), [visual experiment plate](docs/reports/jev-experiment.png), [live observations](docs/evidence/stress-lab.json), and [validation evidence](docs/evidence/xray-validation.md). The ten synthetic bug/repair and metadata-injection probes reveal false alarms as well as successful holds; they do not establish production calibration.
+
 ## Run locally
 
 Python 3.9+; runtime uses the standard library.
