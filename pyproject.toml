@@ -13,3 +13,6 @@ dev = ["mypy==2.3.1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["jev_review"]

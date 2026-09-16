@@ -150,12 +150,15 @@ class GitHubAppRegistrationTests(unittest.TestCase):
             self.assertEqual(len(transport.requests), 1)
 
     def test_callback_state_is_one_shot_and_expiry_is_fail_closed(self):
-        session = registration.RegistrationSession(state="state-value-that-is-long-enough-1234", clock=lambda: 100.0)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        session = registration.RegistrationSession(output_dir=Path(directory.name), state="state-value-that-is-long-enough-1234", clock=lambda: 100.0)
         self.assertTrue(session._consume_state(session.state, "code"))
         self.assertFalse(session._consume_state(session.state, "code"))
-        unicode_state = registration.RegistrationSession(state="state-value-that-is-long-enough-1234")
+        unicode_state = registration.RegistrationSession(output_dir=Path(directory.name), state="state-value-that-is-long-enough-1234")
         self.assertFalse(unicode_state._consume_state("é", "code"))
         expired = registration.RegistrationSession(
+            output_dir=Path(directory.name),
             state="state-value-that-is-long-enough-1234", clock=lambda: 10_000.0
         )
         expired.created_at = 0.0
